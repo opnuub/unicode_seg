@@ -9,3 +9,6 @@ steps:
 
 options:
  logging: CLOUD_LOGGING_ONLY
+
+images:
+- 'us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
