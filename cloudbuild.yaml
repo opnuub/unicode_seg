@@ -11,4 +11,4 @@ options:
  logging: CLOUD_LOGGING_ONLY
 
 images:
-- 'us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+- 'europe-west2-docker.pkg.dev/crested-return-452614-t4/test/test:latest'
