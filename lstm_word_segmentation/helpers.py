@@ -1,6 +1,7 @@
 import numpy as np
 from . import constants
-
+from google.cloud import storage
+import os
 
 def is_ascii(input_str):
     """
@@ -84,3 +85,17 @@ def print_grapheme_clusters(thrsh, language, exclusive):
     print(ratios)
     print("number of different grapheme clusters in {} = {}".format(language, len(ratios.keys())))
     print("{} grapheme clusters form {} of the text".format(cnt, thrsh))
+
+
+def download_from_gcs(gcs_uri, dir):
+    if not gcs_uri.startswith("gs://"):
+        raise ValueError(f"Expected gs://uri, got {gcs_uri}")
+    _, _, bucket_and_path = gcs_uri.partition("://")
+    bucket_name, _, blob_path = bucket_and_path.partition("/")
+    os.makedirs(dir, exist_ok=True)
+    filename = os.path.join(dir, os.path.basename(blob_path))
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_path)
+    blob.download_to_filename(filename)

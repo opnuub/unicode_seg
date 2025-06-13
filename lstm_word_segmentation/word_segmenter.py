@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
-import json
+import json, os
+from google.cloud import storage
 from icu import Char
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Embedding, Dropout
@@ -92,10 +93,11 @@ class WordSegmenter:
         input_language: shows what is the language used to train the model (e.g. Thai, Burmese, ...)
         input_embedding_type: determines what type of embedding to be used in the model. Possible values are
         "grapheme_clusters_tf", "grapheme_clusters_man", and "generalized_vectors"
+        output_dirname: "" for local, else uploaded to GCS
     """
     def __init__(self, input_name, input_n, input_t, input_clusters_num, input_embedding_dim, input_hunits,
                  input_dropout_rate, input_output_dim, input_epochs, input_training_data, input_evaluation_data,
-                 input_language, input_embedding_type):
+                 input_language, input_embedding_type, output_dirname):
         self.name = input_name
         self.n = input_n
         self.t = input_t
@@ -116,6 +118,7 @@ class WordSegmenter:
         self.language = input_language
         self.embedding_type = input_embedding_type
         self.model = None
+        self.output_dirname = output_dirname
 
         # Constructing the grapheme cluster dictionary -- this will be used if self.embedding_type is Grapheme Clusters
         ratios = None
@@ -603,7 +606,10 @@ class WordSegmenter:
         # Save the model using Keras
         model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         tf.saved_model.save(self.model, model_path)
-
+        if self.output_dirname != "":
+            storage_path = os.path.join(self.output_dirname, self.name)
+            blob = storage.blob.Blob.from_uri(storage_path, client=storage.Client())
+            blob.upload_from_filename(os.path.join(model_path, 'saved_model.pb'))
         # Save one np array that holds all weights
         file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
         np.save(str(file), self.model.weights)
