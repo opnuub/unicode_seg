@@ -19,7 +19,7 @@ word_segmenter = WordSegmenter(input_name=model_name, input_n=50, input_t=10000,
                                input_embedding_dim=16, input_hunits=23, input_dropout_rate=0.2, input_output_dim=4,
                                input_epochs=5, input_training_data="BEST",
                                input_evaluation_data="BEST", input_language="Thai",
-                               input_embedding_type="codepoints")
+                               input_embedding_type="codepoints", output_dirname="")
 word_segmenter.train_model()
 word_segmenter.save_model()
 word_segmenter.test_model_line_by_line(verbose=True)
