@@ -12,4 +12,4 @@ COPY . /root
 
 RUN pip install -r /root/requirements.txt
 
-ENTRYPOINT ["python", "train_thai.py"]
+ENTRYPOINT ["python", "train.py"]
