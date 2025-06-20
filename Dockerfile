@@ -6,10 +6,10 @@ RUN apt-get -y update && apt-get -y upgrade
 RUN apt-get -y install pkg-config 
 RUN apt-get -y install libicu-dev
 
-WORKDIR /root
+WORKDIR /
 
-COPY . /root
+COPY . /
 
-RUN pip install -r /root/requirements.txt
+RUN pip install -r /requirements.txt
 
 ENTRYPOINT ["python", "train.py"]
