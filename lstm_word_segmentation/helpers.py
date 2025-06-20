@@ -90,12 +90,16 @@ def print_grapheme_clusters(thrsh, language, exclusive):
 def download_from_gcs(gcs_uri, dir):
     if not gcs_uri.startswith("gs://"):
         raise ValueError(f"Expected gs://uri, got {gcs_uri}")
-    _, _, bucket_and_path = gcs_uri.partition("://")
-    bucket_name, _, blob_path = bucket_and_path.partition("/")
-    os.makedirs(dir, exist_ok=True)
-    filename = os.path.join(dir, os.path.basename(blob_path))
+    gcs_uri = gcs_uri.rstrip('/')
+    bucket_name, prefix = gcs_uri.replace('gs://', '').split('/', 1)
+    prefix += '/' if not prefix.endswith('/') else ''
 
     client = storage.Client()
     bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_path)
-    blob.download_to_filename(filename)
+
+    for blob in bucket.list_blobs(prefix=prefix):
+        rel_path = blob.name[len(prefix):]
+        local_path = os.path.join(dir, rel_path)
+
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        blob.download_to_filename(local_path)
