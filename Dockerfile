@@ -1,15 +1,16 @@
-FROM ubuntu:22.04
+FROM us-docker.pkg.dev/vertex-ai/training/tf-gpu.2-16.py310:latest
 
-FROM python:3.9-bookworm
-
-RUN apt-get -y update && apt-get -y upgrade
-RUN apt-get -y install pkg-config 
-RUN apt-get -y install libicu-dev
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        pkg-config libicu-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
 
 COPY . /
 
-RUN pip install -r /requirements.txt
+RUN python3 -m pip install --upgrade pip && \
+    pip install -r requirements.txt
 
-ENTRYPOINT ["python", "train.py"]
+ENTRYPOINT ["python3", "train_cnn.py"]
