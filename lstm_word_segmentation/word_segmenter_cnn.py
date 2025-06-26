@@ -6,11 +6,11 @@ from keras.models import Sequential
 from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Embedding, Dropout
 from tensorflow import keras
 import tensorflow as tf
+from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum)
+from keras.models import Model
 import shutil, os
 from google.cloud import storage
 import time
-
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 from . import constants
 from .helpers import sigmoid, save_training_plot, upload_to_gcs
@@ -20,6 +20,8 @@ from .line import Line
 from .bies import Bies
 from .grapheme_cluster import GraphemeCluster
 from .code_point import CodePoint
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 class InferenceTime(tf.keras.callbacks.Callback):
     """Measure wall-clock time of the validation pass."""
@@ -42,6 +44,7 @@ class InferenceTime(tf.keras.callbacks.Callback):
         print(f"Epoch {epoch+1:03d}: "
               f"val_loss={v_loss:.4f}  val_acc={v_acc:.4f}  "
               f"inference_time={self._val_duration:.2f}s")
+
 class KerasBatchGenerator(object):
     """
     A batch generator component, which is used to generate batches for training, validation, and evaluation.
@@ -100,7 +103,7 @@ class KerasBatchGenerator(object):
         return x, y
 
 
-class WordSegmenter:
+class WordSegmenterCNN:
     """
     A class that let you make a bi-directional LSTM, train it, and test it.
     Args:
@@ -331,23 +334,32 @@ class WordSegmenter:
         valid_generator = KerasBatchGenerator(x_data, y_data, n=self.n, batch_size=self.batch_size)
 
         # Building the model
-        model = Sequential()
+        inp = Input(shape=(self.n,), dtype="int32")
         if self.embedding_type == "grapheme_clusters_tf":
-            model.add(Embedding(input_dim=self.clusters_num, output_dim=self.embedding_dim, input_length=self.n))
+            x = Embedding(input_dim=self.clusters_num, output_dim=self.embedding_dim, input_length=self.n)(inp)
         elif self.embedding_type == "grapheme_clusters_man":
-            model.add(TimeDistributed(Dense(input_dim=self.clusters_num, units=self.embedding_dim, use_bias=False,
-                                            kernel_initializer='uniform')))
+            x = TimeDistributed(Dense(input_dim=self.clusters_num, units=self.embedding_dim, use_bias=False,
+                                            kernel_initializer='uniform'))(inp)
         elif self.embedding_type == "generalized_vectors":
-            model.add(TimeDistributed(Dense(self.embedding_dim, activation=None, use_bias=False,
-                                            kernel_initializer='uniform')))
+            x = TimeDistributed(Dense(self.embedding_dim, activation=None, use_bias=False,
+                                            kernel_initializer='uniform'))(inp)
         elif self.embedding_type == "codepoints":
-            model.add(Embedding(input_dim=self.codepoints_num, output_dim=self.embedding_dim, input_length=self.n))
+            x = Embedding(input_dim=self.codepoints_num, output_dim=self.embedding_dim, input_length=self.n)(inp)
         else:
             print("Warning: the embedding_type is not implemented")
-        model.add(Dropout(self.dropout_rate))
-        model.add(Bidirectional(LSTM(self.hunits, return_sequences=True), input_shape=(self.n, 1)))
-        model.add(Dropout(self.dropout_rate))
-        model.add(TimeDistributed(Dense(self.output_dim, activation='softmax')))
+        x = Dropout(self.dropout_rate)(x)
+        conv_specs = [(3, 1), (5, 2), (9, 3)]
+        conv_outputs = []
+        for k_size, dilation in conv_specs:
+            y = Conv1D(filters=32, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+            y = BatchNormalization()(y)
+            y = ReLU()(y)
+            conv_outputs.append(y)
+        x = Maximum()(conv_outputs)
+        x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
+        x = Dropout(self.dropout_rate)(x)
+        out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
+        model = Model(inp, out, name="attacut")
         opt = keras.optimizers.Adam(learning_rate=0.1)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
@@ -378,7 +390,17 @@ class WordSegmenter:
             x_data, y_data = self._get_trainable_data(line.man_segmented)
 
             # Using the manual predict function for lines because they are not necessarily self.n long
-            y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
+            x = None
+            x = np.zeros([len(y_data), len(y_data[0])])
+            for i in range(len(y_data)):
+                for j in range(len(y_data[0])):
+                    print(y_data[6])
+                    if len(y_data[0])*i + j < len(x_data):
+                        x[i, j] = x_data[len(y_data[0])*i + j].graph_clust_id
+            y_hat = self.model.predict(x)
+            
+            input()
+            y_hat = Bies(input_bies=self._manual_predict_cnn(x_data), input_type="mat")
             y_hat.normalize_bies()
 
             # Updating overall accuracy using the new line
@@ -556,6 +578,68 @@ class WordSegmenter:
             est[i, :] = curr_est
         return est
 
+    def _manual_predict_cnn(self, test_input):
+        ids = []
+        for tok in test_input:
+            if self.embedding_type == "grapheme_clusters_tf":
+                ids.append(tok.graph_clust_id)
+            elif self.embedding_type == "codepoints":
+                ids.append(tok.codepoint_id)
+            else:                        
+                ids.append(tok.graph_clust_id)
+
+        L = len(ids)
+        if L == 0:                     
+            return np.zeros((0, self.output_dim), dtype=np.float32)
+
+        x_batch = tf.constant([ids], dtype=tf.int32)
+
+        if getattr(self, "_cnn_infer_model", None) is None:
+            inp = Input(shape=(self.n,),
+                                        dtype="int32",
+                                        name="dyn_inp")
+
+            x = Embedding(input_dim=self.clusters_num,
+                                        output_dim=self.embedding_dim,
+                                        input_length=self.n,
+                                        name="dyn_emb")(inp)
+            x = Dropout(self.dropout_rate)(x, training=False)
+
+            conv_specs = [(9, 3), (5, 2), (3, 1)]
+            conv_outs = []
+            for k, dil in conv_specs:
+                y = Conv1D(128,
+                                        kernel_size=k,
+                                        dilation_rate=dil,
+                                        padding="same",
+                                        name=f"dyn_conv_k{k}_d{dil}")(x)
+                y = BatchNormalization(
+                        name=f"dyn_bn_k{k}_d{dil}")(y, training=False)
+                y = ReLU()(y)
+                conv_outs.append(y)
+
+            x = Maximum()(conv_outs)
+
+            x = TimeDistributed(
+                    Dense(self.hunits,
+                                        activation="relu"),
+                    name="dyn_td_hidden")(x)
+            x = Dropout(self.dropout_rate)(x, training=False)
+
+            out = TimeDistributed(
+                    Dense(self.output_dim,
+                                        activation="softmax"),
+                    name="dyn_td_out")(x)
+
+            self._cnn_infer_model = tf.keras.Model(inp, out, name="cnn_infer_dyn")
+            self._cnn_infer_model.trainable = False
+
+            self._cnn_infer_model.set_weights(self.model.get_weights())
+
+        y_pred = self._cnn_infer_model(x_batch, training=False).numpy()
+        return y_pred[0]   
+
+
     def _compute_hc(self, weights, x_t, h_tm1, c_tm1):
         """
         Given weights of a LSTM model, the input at time t, and values for h and c at time t-1, this function compute
@@ -665,6 +749,51 @@ class WordSegmenter:
         if 'AIP_MODEL_DIR' in os.environ:
             upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
 
+    def save_cnn_model(self):
+        """
+        This function saves the current trained model of this word_segmenter instance.
+        """
+        # Save the model using Keras
+        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + ".keras"))
+        self.model.save(model_path)
+        #tf.saved_model.save(self.model, model_path)
+        # Save one np array that holds all weights
+        file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
+        np.save(str(file), self.model.weights)
+
+        # Save the model in json format, that has both weights and grapheme clusters dictionary
+        """
+        json_file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights.json")
+        with open(str(json_file), 'w') as wfile:
+            output = dict()
+            output["model"] = self.name
+            if "grapheme_clusters" in self.embedding_type:
+                output["dic"] = self.graph_clust_dic
+            elif "codepoints" in self.embedding_type:
+                if self.language == "Thai":
+                    output["dic"] = constants.THAI_CODE_POINT_DICTIONARY
+                if self.language == "Burmese":
+                    output["dic"] = constants.BURMESE_CODE_POINT_DICTIONARY
+            for i in range(len(self.model.weights)):
+                dic_model = dict()
+                dic_model["v"] = 1
+                mat = self.model.weights[i].numpy()
+                dim0 = mat.shape[0]
+                dim1 = 1
+                if len(mat.shape) == 1:
+                    dic_model["dim"] = [dim0]
+                else:
+                    dim1 = mat.shape[1]
+                    dic_model["dim"] = [dim0, dim1]
+                serial_mat = np.reshape(mat, newshape=[dim0 * dim1])
+                serial_mat = serial_mat.tolist()
+                dic_model["data"] = serial_mat
+                output["mat{}".format(i+1)] = dic_model
+            json.dump(output, wfile)
+        if 'AIP_MODEL_DIR' in os.environ:
+            upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
+        """
+
     def set_model(self, input_model):
         """
         This function set the current model to an input model
@@ -672,6 +801,72 @@ class WordSegmenter:
         """
         self.model = input_model
 
+    def set_cnn_model(self, path):
+        """
+        This function set the current model to an input model
+        input_model: the input model
+        """
+        import keras
+        model = keras.saving.load_model(path, compile=False)
+        self.model = model
+
+
+def pick_cnn_model(model_name, embedding, train_data, eval_data):
+    """
+    Load a saved CNN-based word segmentation model and return a WordSegmenter instance.
+    Args:
+        model_name: Name of the saved model directory (under Models/).
+        embedding: Embedding type used to train the model (e.g. "grapheme_clusters_tf", "codepoints", etc.).
+        train_data: Dataset name used for training (e.g. "BEST").
+        eval_data: Dataset name for evaluation (should correspond to training dataset structure).
+    """
+    # Load the SavedModel as a Keras layer
+    model_path = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Models', model_name + '.keras')
+    # loaded_layer = keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
+    
+    # Determine language from model name
+    language = None
+    if "Thai" in model_name:
+        language = "Thai"
+    elif "Burmese" in model_name:
+        language = "Burmese"
+    else:
+        print("Warning: model name does not specify a supported language.")
+    
+    # Warn if model was trained on exclusive dataset
+    if "exclusive" in model_name:
+        print(f"Note: model {model_name} was trained on an exclusive dataset.")
+    
+    input_n = 200
+    input_t = 500000
+    
+    # Infer embedding and model dimensions from weights
+    # Weight 0: Embedding matrix of shape (vocab_size, embedding_dim)
+    # vocab_size = loaded_layer.weights[0].shape[0]    # number of input tokens (clusters/codepoints)
+    # embedding_dim = loaded_layer.weights[0].shape[1]  # embedding vector dimension
+    # Last Dense layer weights (just before softmax) have shape (hunits, output_dim)
+    output_dim = 4    # should be 4 for BIES tags
+    hunits = 23        # hidden units in the TimeDistributed Dense layer
+    
+    # Create a WordSegmenter instance with these parameters
+    word_segmenter = WordSegmenterCNN(
+        input_name=model_name,
+        input_n=input_n,
+        input_t=input_t,
+        input_clusters_num=350,       # for grapheme clusters this includes +1 for "unknown"
+        input_embedding_dim=200,
+        input_hunits=hunits,
+        input_dropout_rate=0.2,
+        input_output_dim=output_dim,
+        input_epochs=1,                     # epochs value not critical for inference
+        input_training_data=train_data,
+        input_evaluation_data=eval_data,
+        input_language=language,
+        input_embedding_type=embedding
+    )
+    # Assign the loaded model to the WordSegmenter
+    word_segmenter.set_cnn_model(model_path)
+    return word_segmenter
 
 def pick_lstm_model(model_name, embedding, train_data, eval_data):
     """
@@ -722,7 +917,7 @@ def pick_lstm_model(model_name, embedding, train_data, eval_data):
             input_t = 1200000
     if input_n is None:
         print("This model name is not valid because it doesn't have name of the embedding type in it")
-    word_segmenter = WordSegmenter(input_name=model_name, input_n=input_n, input_t=input_t,
+    word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=input_n, input_t=input_t,
                                    input_clusters_num=input_clusters_num, input_embedding_dim=input_embedding_dim,
                                    input_hunits=input_hunits, input_dropout_rate=0.2, input_output_dim=4,
                                    input_epochs=15, input_training_data=train_data, input_evaluation_data=eval_data,

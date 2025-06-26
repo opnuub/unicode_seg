@@ -1,6 +1,6 @@
 from lstm_word_segmentation.lstm_bayesian_optimization import LSTMBayesianOptimization
-from lstm_word_segmentation.word_segmenter import WordSegmenter
-from lstm_word_segmentation.word_segmenter import pick_lstm_model
+from lstm_word_segmentation.word_segmenter_cnn import WordSegmenterCNN
+from lstm_word_segmentation.word_segmenter_cnn import pick_lstm_model, pick_cnn_model
 import time
 
 # Use Bayesian optimization to decide on values of hunits and embedding_dim
@@ -15,24 +15,25 @@ bayes_optimization.perform_bayesian_optimization()
 
 # Train a new model -- choose name cautiously to not overwrite other models
 
-model_name = "Thai_codepoints"
-word_segmenter = WordSegmenter(input_name=model_name, input_n=200, input_t=100000, input_clusters_num=350,
-                               input_embedding_dim=16, input_hunits=23, input_dropout_rate=0.2, input_output_dim=4,
-                               input_epochs=10, input_training_data="BEST",
-                               input_evaluation_data="BEST", input_language="Thai",
-                               input_embedding_type="grapheme_clusters_tf")
-word_segmenter.train_model()
-word_segmenter.save_model()
+# model_name = "Thai_codepointss"
+# word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=200, input_t=10000, input_clusters_num=350,
+#                                input_embedding_dim=16, input_hunits=23, input_dropout_rate=0.2, input_output_dim=4,
+#                                input_epochs=2, input_training_data="BEST",
+#                                input_evaluation_data="BEST", input_language="Thai",
+#                                input_embedding_type="grapheme_clusters_tf")
+# word_segmenter.train_model()
+# word_segmenter.save_cnn_model()
 #word_segmenter.test_model_line_by_line(verbose=True)
+
 
 # Choose one of the saved models to use
 # '''
-# word_segmenter = pick_lstm_model(model_name="Thai_codepoints", embedding="grapheme_clusters_tf",
-#                                  train_data="BEST", eval_data="BEST")
+word_segmenter = pick_cnn_model(model_name="Thai_codepointss", embedding="grapheme_clusters_tf",
+                                 train_data="BEST", eval_data="BEST")
 # print("model_name = {}, embedding dim = {}, hunits = {}".format(word_segmenter.name, word_segmenter.embedding_dim,
 #                                                                 word_segmenter.hunits))
 # # word_segmenter.save_model()
-# start = time.time()
-# word_segmenter.test_model_line_by_line(verbose=True, fast=True)
-# print(f'Time: {time.time() - start}')
+start = time.time()
+word_segmenter.test_model_line_by_line(verbose=True, fast=True)
+print(f'Time: {time.time() - start}')
 # '''
