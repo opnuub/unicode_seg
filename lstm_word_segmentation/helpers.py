@@ -93,7 +93,7 @@ def print_grapheme_clusters(thrsh, language, exclusive):
 def download_from_gcs(gcs_uri: str, dir: str) -> None:
     """
     This function downloads data from Google Cloud Storage. Given gcs_uri, the function downloads 
-    all subfolder and files inside and stores them in dir.
+    all subfolders and files inside and stores them in dir.
     Args:
         gcs_uri: A `gs://` URI that **must** contain both a bucket name and an object prefix, e.g. ``gs://my-bucket/Data/``.
         dir: Local root directory. Sub-folders identical to the GCS object paths are created beneath this location.
@@ -118,13 +118,13 @@ def download_from_gcs(gcs_uri: str, dir: str) -> None:
 def save_training_plot(history, model_path: Path) -> None:
     """
     Plot accuracy & loss curves from a Keras History object and save the figure.
-    Args
+    Args:
         history: The History returned by `model.fit(...)`.
         model_path: Destination directory, e.g. Path(__file__).parent.parent.absolute().joinpath("Models", model_name)
     """
     fig, (ax_acc, ax_loss) = plt.subplots(1, 2, figsize=(10, 4), sharex=True)
 
-    ax_acc.plot(history.history["accuracy"],     label="train acc")
+    ax_acc.plot(history.history["train_accuracy"],     label="train acc")
     ax_acc.plot(history.history["val_accuracy"], label="val acc")
     ax_acc.set_title("Accuracy")
     ax_acc.set_xlabel("Epoch")
@@ -132,7 +132,7 @@ def save_training_plot(history, model_path: Path) -> None:
     ax_acc.legend()
     ax_acc.grid(True)
 
-    ax_loss.plot(history.history["loss"],     label="train loss", linestyle="--")
+    ax_loss.plot(history.history["train_loss"],     label="train loss", linestyle="--")
     ax_loss.plot(history.history["val_loss"], label="val loss",   linestyle="--")
     ax_loss.set_title("Loss")
     ax_loss.set_xlabel("Epoch")

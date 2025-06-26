@@ -6,11 +6,9 @@ from keras.models import Sequential
 from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Embedding, Dropout
 from tensorflow import keras
 import tensorflow as tf
-import shutil, os
-from google.cloud import storage
 
 from . import constants
-from .helpers import sigmoid, save_training_plot, upload_to_gcs
+from .helpers import sigmoid
 from .text_helpers import get_segmented_file_in_one_line, get_best_data_text, get_lines_of_text
 from .accuracy import Accuracy
 from .line import Line
@@ -330,11 +328,10 @@ class WordSegmenter:
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
 
         # Fitting the model
-        history = model.fit(train_generator.generate(embedding_type=self.embedding_type),
+        model.fit(train_generator.generate(embedding_type=self.embedding_type),
                   steps_per_epoch=self.t // self.batch_size, epochs=self.epochs,
                   validation_data=valid_generator.generate(embedding_type=self.embedding_type),
                   validation_steps=self.t // self.batch_size)
-        save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         self.model = model
 
     def _test_text_line_by_line(self, file, line_limit, verbose):
@@ -606,6 +603,7 @@ class WordSegmenter:
         # Save the model using Keras
         model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         tf.saved_model.save(self.model, model_path)
+
         # Save one np array that holds all weights
         file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
         np.save(str(file), self.model.weights)
@@ -638,8 +636,6 @@ class WordSegmenter:
                 dic_model["data"] = serial_mat
                 output["mat{}".format(i+1)] = dic_model
             json.dump(output, wfile)
-        if 'AIP_MODEL_DIR' in os.environ:
-            upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
 
     def set_model(self, input_model):
         """
@@ -698,6 +694,7 @@ def pick_lstm_model(model_name, embedding, train_data, eval_data):
             input_t = 1200000
     if input_n is None:
         print("This model name is not valid because it doesn't have name of the embedding type in it")
+
     word_segmenter = WordSegmenter(input_name=model_name, input_n=input_n, input_t=input_t,
                                    input_clusters_num=input_clusters_num, input_embedding_dim=input_embedding_dim,
                                    input_hunits=input_hunits, input_dropout_rate=0.2, input_output_dim=4,

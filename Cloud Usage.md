@@ -7,15 +7,15 @@ To bind the repository to Google Cloud Platform, follow the steps below:
     - Cloud Pub/Sub API
     - Cloud Build API
 
-2. Create a Google Cloud Storage Bucket, upload the dataset into gs://bucket_name/Data/ with the following directory structure:\
-Data/\
-├── Best/\
-│   ├── article/\
-│   ├── encyclopedia/\
-│   ├── news/\
-│   └── novel/\
-├── my_test_segmented.txt\
-├── my_train.txt\
+2. Create a Google Cloud Storage Bucket, upload the dataset into gs://bucket_name/Data/ with the following directory structure:
+Data/
+├── Best/
+│   ├── article/
+│   ├── encyclopedia/
+│   ├── news/
+│   └── novel/
+├── my_test_segmented.txt
+├── my_train.txt
 └── my_valid.txt
 
 3. In Artifact Registry, create repository in the same region as the storage bucket. In cloudbuild.yaml, change the commented lines to the path of repository created + image name.
