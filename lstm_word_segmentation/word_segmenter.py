@@ -378,9 +378,12 @@ class WordSegmenter:
             x_data, y_data = self._get_trainable_data(line.man_segmented)
 
             # Using the manual predict function for lines because they are not necessarily self.n long
-            y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
+            # y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
+            # y_hat.normalize_bies()
+            x = np.array([[tok.graph_clust_id for tok in x_data]])
+            y_pred = np.squeeze(self.model.predict(x, verbose=0), axis=0)
+            y_hat = Bies(input_bies=y_pred, input_type="mat")
             y_hat.normalize_bies()
-
             # Updating overall accuracy using the new line
             actual_y = Bies(input_bies=y_data, input_type="mat")
             accuracy.update(true_bies=actual_y.str, est_bies=y_hat.str)
@@ -623,6 +626,18 @@ class WordSegmenter:
 
         return y_hat_pretty
 
+    def save_cnn_model(self):
+        """
+        This function saves the current trained model of this word_segmenter instance.
+        """
+        # Save the model using Keras
+        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + ".keras"))
+        self.model.save(model_path)
+        #tf.saved_model.save(self.model, model_path)
+        # Save one np array that holds all weights
+        file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
+        np.save(str(file), self.model.weights)
+
     def save_model(self):
         """
         This function saves the current trained model of this word_segmenter instance.
@@ -672,6 +687,71 @@ class WordSegmenter:
         """
         self.model = input_model
 
+    def set_cnn_model(self, path):
+        """
+        This function set the current model to an input model
+        input_model: the input model
+        """
+        import keras
+        model = keras.saving.load_model(path, compile=False)
+        self.model = model
+
+def pick_cnn_model(model_name, embedding, train_data, eval_data):
+    """
+    Load a saved CNN-based word segmentation model and return a WordSegmenter instance.
+    Args:
+        model_name: Name of the saved model directory (under Models/).
+        embedding: Embedding type used to train the model (e.g. "grapheme_clusters_tf", "codepoints", etc.).
+        train_data: Dataset name used for training (e.g. "BEST").
+        eval_data: Dataset name for evaluation (should correspond to training dataset structure).
+    """
+    # Load the SavedModel as a Keras layer
+    model_path = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Models', model_name + '.keras')
+    # loaded_layer = keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
+    
+    # Determine language from model name
+    language = None
+    if "Thai" in model_name:
+        language = "Thai"
+    elif "Burmese" in model_name:
+        language = "Burmese"
+    else:
+        print("Warning: model name does not specify a supported language.")
+    
+    # Warn if model was trained on exclusive dataset
+    if "exclusive" in model_name:
+        print(f"Note: model {model_name} was trained on an exclusive dataset.")
+    
+    input_n = 200
+    input_t = 500000
+    
+    # Infer embedding and model dimensions from weights
+    # Weight 0: Embedding matrix of shape (vocab_size, embedding_dim)
+    # vocab_size = loaded_layer.weights[0].shape[0]    # number of input tokens (clusters/codepoints)
+    # embedding_dim = loaded_layer.weights[0].shape[1]  # embedding vector dimension
+    # Last Dense layer weights (just before softmax) have shape (hunits, output_dim)
+    output_dim = 4    # should be 4 for BIES tags
+    hunits = 23        # hidden units in the TimeDistributed Dense layer
+    
+    # Create a WordSegmenter instance with these parameters
+    word_segmenter = WordSegmenter(
+        input_name=model_name,
+        input_n=input_n,
+        input_t=input_t,
+        input_clusters_num=350,       # for grapheme clusters this includes +1 for "unknown"
+        input_embedding_dim=200,
+        input_hunits=hunits,
+        input_dropout_rate=0.2,
+        input_output_dim=output_dim,
+        input_epochs=1,                     # epochs value not critical for inference
+        input_training_data=train_data,
+        input_evaluation_data=eval_data,
+        input_language=language,
+        input_embedding_type=embedding
+    )
+    # Assign the loaded model to the WordSegmenter
+    word_segmenter.set_cnn_model(model_path)
+    return word_segmenter
 
 def pick_lstm_model(model_name, embedding, train_data, eval_data):
     """

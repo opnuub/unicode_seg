@@ -8,6 +8,7 @@ from tensorflow import keras
 import tensorflow as tf
 from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum)
 from keras.models import Model
+from keras.callbacks import EarlyStopping
 import shutil, os
 from google.cloud import storage
 import time
@@ -22,28 +23,6 @@ from .grapheme_cluster import GraphemeCluster
 from .code_point import CodePoint
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
-class InferenceTime(tf.keras.callbacks.Callback):
-    """Measure wall-clock time of the validation pass."""
-    
-    def on_test_begin(self, logs=None):
-        self._val_start = time.time()
-    
-    def on_test_end(self, logs=None):
-        self._val_duration = time.time() - self._val_start
-    
-    def on_epoch_end(self, epoch, logs=None):
-        logs = logs or {}
-        v_loss = logs.get("val_loss")
-        v_acc  = (logs.get("val_accuracy") or 
-                  logs.get("val_acc") or 
-                  logs.get("val_sparse_categorical_accuracy"))
-        
-        logs["val_time"] = self._val_duration
-        
-        print(f"Epoch {epoch+1:03d}: "
-              f"val_loss={v_loss:.4f}  val_acc={v_acc:.4f}  "
-              f"inference_time={self._val_duration:.2f}s")
 
 class KerasBatchGenerator(object):
     """
@@ -100,6 +79,7 @@ class KerasBatchGenerator(object):
                 if embedding_type == "codepoints":
                     x[i, j] = self.x_data[self.n * i + j].codepoint_id
             y[i, :, :] = self.y_data[self.n * i: self.n * (i + 1), :]
+        print(x)
         return x, y
 
 
@@ -231,6 +211,17 @@ class WordSegmenterCNN:
         else:
             print("Warning: the generalized_vectros embedding type is not supported for this language")
 
+    def data_generator(self, start, end):
+        LENGTH = 200
+        for i in range(start, end):
+            text = get_best_data_text(i, i+1, False, False)
+            x_data, y_data = self._get_trainable_data(text)
+            x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+            for pos in range(0, len(x), LENGTH):
+                x_chunk = x[pos : pos + LENGTH]
+                y_chunk = y[pos : pos + LENGTH]
+                yield x_chunk, y_chunk
+
     def _get_trainable_data(self, input_line):
         """
         Given a segmented line, generates a list of input data (with respect to the embedding type) and a n*4 np array
@@ -276,67 +267,100 @@ class WordSegmenterCNN:
         train the model.
         """
         # Get training data of length self.t
-        input_str = None
-        if self.training_data == "BEST":
-            input_str = get_best_data_text(starting_text=1, ending_text=10, pseudo=False, exclusive=False)
-        elif self.training_data == "exclusive BEST":
-            input_str = get_best_data_text(starting_text=1, ending_text=10, pseudo=False, exclusive=True)
-        elif self.training_data == "pseudo BEST":
-            input_str = get_best_data_text(starting_text=1, ending_text=10, pseudo=True, exclusive=False)
-        elif self.training_data == "my":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
-        elif self.training_data == "exclusive my":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train_exclusive.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
-        elif self.training_data == "SAFT_Burmese":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/SAFT_burmese_train.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
-        elif self.training_data == "BEST_my":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/Best_my_train.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
-        else:
-            print("Warning: no implementation for this training data exists!")
-        x_data, y_data = self._get_trainable_data(input_str)
-        if self.t > len(x_data):
-            print("Warning: size of the training data is less than self.t")
-        x_data = x_data[:self.t]
-        y_data = y_data[:self.t, :]
-        train_generator = KerasBatchGenerator(x_data, y_data, n=self.n, batch_size=self.batch_size)
+        # input_str = None
+        # if self.training_data == "BEST":
+        #     input_str = get_best_data_text(starting_text=1, ending_text=10, pseudo=False, exclusive=False)
+        # elif self.training_data == "exclusive BEST":
+        #     input_str = get_best_data_text(starting_text=1, ending_text=10, pseudo=False, exclusive=True)
+        # elif self.training_data == "pseudo BEST":
+        #     input_str = get_best_data_text(starting_text=1, ending_text=10, pseudo=True, exclusive=False)
+        # elif self.training_data == "my":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
+        # elif self.training_data == "exclusive my":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train_exclusive.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
+        # elif self.training_data == "SAFT_Burmese":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/SAFT_burmese_train.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
+        # elif self.training_data == "BEST_my":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/Best_my_train.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
+        # else:
+        #     print("Warning: no implementation for this training data exists!")
+        # x_data, y_data = self._get_trainable_data(input_str)
+        # if self.t > len(x_data):
+        #     print("Warning: size of the training data is less than self.t")
+        # x_data = x_data[:self.t]
+        # y_data = y_data[:self.t, :]
+        # train_generator = KerasBatchGenerator(x_data, y_data, n=self.n, batch_size=self.batch_size)
 
-        # Get validation data of length self.t
-        if self.training_data == "BEST":
-            input_str = get_best_data_text(starting_text=10, ending_text=20, pseudo=False, exclusive=False)
-        elif self.training_data == "exclusive BEST":
-            input_str = get_best_data_text(starting_text=10, ending_text=20, pseudo=False, exclusive=True)
-        elif self.training_data == "pseudo BEST":
-            input_str = get_best_data_text(starting_text=10, ending_text=20, pseudo=True, exclusive=False)
-        elif self.training_data == "my":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
-        elif self.training_data == "exclusive my":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid_exclusive.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
-        elif self.training_data == "SAFT_Burmese":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/SAFT_burmese_test.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
-        elif self.training_data == "BEST_my":
-            file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/Best_my_valid.txt')
-            input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
-        else:
-            print("Warning: no implementation for this validation data exists!")
-        x_data, y_data = self._get_trainable_data(input_str)
+        # # Get validation data of length self.t
+        # if self.training_data == "BEST":
+        #     input_str = get_best_data_text(starting_text=80, ending_text=90, pseudo=False, exclusive=False)
+        # elif self.training_data == "exclusive BEST":
+        #     input_str = get_best_data_text(starting_text=10, ending_text=20, pseudo=False, exclusive=True)
+        # elif self.training_data == "pseudo BEST":
+        #     input_str = get_best_data_text(starting_text=10, ending_text=20, pseudo=True, exclusive=False)
+        # elif self.training_data == "my":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
+        # elif self.training_data == "exclusive my":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid_exclusive.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="unsegmented", output_type="icu_segmented")
+        # elif self.training_data == "SAFT_Burmese":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/SAFT_burmese_test.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
+        # elif self.training_data == "BEST_my":
+        #     file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/Best_my_valid.txt')
+        #     input_str = get_segmented_file_in_one_line(file, input_type="man_segmented", output_type="man_segmented")
+        # else:
+        #     print("Warning: no implementation for this validation data exists!")
+        # x_data, y_data = self._get_trainable_data(input_str)
+        # if self.t > len(x_data):
+        #     print("Warning: size of the validation data is less than self.t")
+        # x_data = x_data[:self.t]
+        # y_data = y_data[:self.t, :]
+        # valid_generator = KerasBatchGenerator(x_data, y_data, n=self.n, batch_size=self.batch_size)
 
-        if self.t > len(x_data):
-            print("Warning: size of the validation data is less than self.t")
-        x_data = x_data[:self.t]
-        y_data = y_data[:self.t, :]
-        valid_generator = KerasBatchGenerator(x_data, y_data, n=self.n, batch_size=self.batch_size)
+        base = tf.data.Dataset.from_generator(
+            lambda: self.data_generator(1, 80),
+            output_signature=(
+                tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                tf.TensorSpec(shape=(None,4), dtype=tf.int32)
+            )
+        )
+        import math
+        num_train_examples = base.cardinality().numpy()   # exact when the generator is finite
+        steps_per_epoch   = math.ceil(num_train_examples / 1024)
+        train_dataset = base.repeat().shuffle(50000, reshuffle_each_iteration=True).padded_batch(
+            batch_size=1024,
+            padded_shapes=([None], [None, 4]),
+            padding_values=(-1,0)
+        ).prefetch(tf.data.AUTOTUNE)
+        
+        valid_dataset = tf.data.Dataset.from_generator(
+            lambda: self.data_generator(80, 90),
+            output_signature=(
+                tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                tf.TensorSpec(shape=(None,4), dtype=tf.int32)
+            )
+        ).padded_batch(
+            batch_size=1024,
+            padded_shapes=([None], [None, 4]),
+            padding_values=(-1,0)
+        )
 
+        early_stop = EarlyStopping(
+            monitor="val_accuracy",      # metric to watch
+            patience=2,             # “no-improve” epochs before stopping
+            restore_best_weights=True,
+            verbose=1                # prints a message when stopping
+        )
         # Building the model
-        inp = Input(shape=(self.n,), dtype="int32")
+        inp = Input(shape=(None,), dtype="int32")
         if self.embedding_type == "grapheme_clusters_tf":
-            x = Embedding(input_dim=self.clusters_num, output_dim=self.embedding_dim, input_length=self.n)(inp)
+            x = Embedding(input_dim=self.clusters_num, output_dim=self.embedding_dim)(inp)
         elif self.embedding_type == "grapheme_clusters_man":
             x = TimeDistributed(Dense(input_dim=self.clusters_num, units=self.embedding_dim, use_bias=False,
                                             kernel_initializer='uniform'))(inp)
@@ -351,7 +375,7 @@ class WordSegmenterCNN:
         conv_specs = [(3, 1), (5, 2), (9, 3)]
         conv_outputs = []
         for k_size, dilation in conv_specs:
-            y = Conv1D(filters=32, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+            y = Conv1D(filters=16, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
             y = BatchNormalization()(y)
             y = ReLU()(y)
             conv_outputs.append(y)
@@ -360,16 +384,11 @@ class WordSegmenterCNN:
         x = Dropout(self.dropout_rate)(x)
         out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
         model = Model(inp, out, name="attacut")
-        opt = keras.optimizers.Adam(learning_rate=0.1)
+        opt = keras.optimizers.Adam(learning_rate=0.001)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
-        model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
-        timer_cb = InferenceTime()
+        model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
-        history = model.fit(train_generator.generate(embedding_type=self.embedding_type),
-                  steps_per_epoch=self.t // self.batch_size, epochs=self.epochs,
-                  validation_data=valid_generator.generate(embedding_type=self.embedding_type),
-                  validation_steps=self.t // self.batch_size,
-                  callbacks=[timer_cb])
+        history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop])
         save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         self.model = model
 
@@ -388,21 +407,10 @@ class WordSegmenterCNN:
         accuracy = Accuracy()
         for line in lines[:line_limit]:
             x_data, y_data = self._get_trainable_data(line.man_segmented)
-
-            # Using the manual predict function for lines because they are not necessarily self.n long
-            x = None
-            x = np.zeros([len(y_data), len(y_data[0])])
-            for i in range(len(y_data)):
-                for j in range(len(y_data[0])):
-                    print(y_data[6])
-                    if len(y_data[0])*i + j < len(x_data):
-                        x[i, j] = x_data[len(y_data[0])*i + j].graph_clust_id
-            y_hat = self.model.predict(x)
-            
-            input()
-            y_hat = Bies(input_bies=self._manual_predict_cnn(x_data), input_type="mat")
+            x = np.array([[tok.graph_clust_id for tok in x_data]], dtype="float32")
+            y_pred = np.squeeze(self.model.predict(x, verbose=0), axis=0)
+            y_hat = Bies(input_bies=y_pred, input_type="mat")
             y_hat.normalize_bies()
-
             # Updating overall accuracy using the new line
             actual_y = Bies(input_bies=y_data, input_type="mat")
             accuracy.update(true_bies=actual_y.str, est_bies=y_hat.str)
@@ -425,7 +433,7 @@ class WordSegmenterCNN:
         if self.evaluation_data in ["BEST", "exclusive BEST"]:
             texts_range = range(40, 60)
             if fast:
-                texts_range = range(40, 45)
+                texts_range = range(90, 96)
             category = ["news", "encyclopedia", "article", "novel"]
             for text_num in texts_range:
                 if verbose:
@@ -502,312 +510,32 @@ class WordSegmenterCNN:
             print("The F1 score by test_model_line_by_line function: {:.3f}".format(accuracy.get_f1_score()))
         return accuracy
 
-    def _manual_predict(self, test_input):
-        """
-        Implementation of the tf.predict function manually. This function works for inputs of any length, and only uses
-        model weights obtained from self.model.weights.
-        Args:
-            test_input: the input text
-        """
-        # Forward LSTM
-        dtype = np.float32
-        embedarr = self.model.weights[0].numpy().astype(dtype)
-        lstm_weights = [self.model.weights[1].numpy().astype(dtype), self.model.weights[2].numpy().astype(dtype),
-                        self.model.weights[3].numpy().astype(dtype)]
-        c_fw = np.zeros([1, self.hunits], dtype=dtype)
-        h_fw = np.zeros([1, self.hunits], dtype=dtype)
-        all_h_fw = np.zeros([len(test_input), self.hunits], dtype=dtype)
-        for i in range(len(test_input)):
-            x_t = None
-            if self.embedding_type == "grapheme_clusters_tf":
-                input_graph_id = test_input[i].graph_clust_id
-                x_t = embedarr[input_graph_id, :]
-                x_t = x_t.reshape(1, x_t.shape[0])
-            elif self.embedding_type == "grapheme_clusters_man":
-                input_graph_vec = test_input[i].graph_clust_vec
-                x_t = input_graph_vec.dot(embedarr)
-            elif self.embedding_type == "generalized_vectors":
-                input_generalized_vec = test_input[i].generalized_vec
-                x_t = input_generalized_vec.dot(embedarr)
-            elif self.embedding_type == "codepoints":
-                input_codepoint_id = test_input[i].codepoint_id
-                x_t = embedarr[input_codepoint_id, :]
-                x_t = x_t.reshape(1, x_t.shape[0])
-            else:
-                print("Warning: this embedding type is not implemented for manual prediction")
-            h_fw, c_fw = self._compute_hc(lstm_weights, x_t, h_fw, c_fw)
-            all_h_fw[i, :] = h_fw
-
-        # Backward LSTM
-        lstm_weights = [self.model.weights[4].numpy().astype(dtype), self.model.weights[5].numpy().astype(dtype),
-                        self.model.weights[6].numpy().astype(dtype)]
-        c_bw = np.zeros([1, self.hunits], dtype=dtype)
-        h_bw = np.zeros([1, self.hunits], dtype=dtype)
-        all_h_bw = np.zeros([len(test_input), self.hunits])
-        for i in range(len(test_input) - 1, -1, -1):
-            x_t = None
-            if self.embedding_type == "grapheme_clusters_tf":
-                input_graph_id = test_input[i].graph_clust_id
-                x_t = embedarr[input_graph_id, :]
-                x_t = x_t.reshape(1, x_t.shape[0])
-            elif self.embedding_type == "grapheme_clusters_man":
-                input_graph_vec = test_input[i].graph_clust_vec
-                x_t = input_graph_vec.dot(embedarr)
-            elif self.embedding_type == "generalized_vectors":
-                input_generalized_vec = test_input[i].generalized_vec
-                x_t = input_generalized_vec.dot(embedarr)
-            elif self.embedding_type == "codepoints":
-                input_codepoint_id = test_input[i].codepoint_id
-                x_t = embedarr[input_codepoint_id, :]
-                x_t = x_t.reshape(1, x_t.shape[0])
-            else:
-                print("Warning: this embedding type is not implemented for manual prediction")
-            h_bw, c_bw = self._compute_hc(lstm_weights, x_t, h_bw, c_bw)
-            all_h_bw[i, :] = h_bw
-
-        # Combining Forward and Backward layers through dense time-distributed layer
-        timew = self.model.weights[7].numpy().astype(dtype)
-        timeb = self.model.weights[8].numpy().astype(dtype)
-        est = np.zeros([len(test_input), 4], dtype=dtype)
-        for i in range(len(test_input)):
-            final_h = np.concatenate((all_h_fw[i, :], all_h_bw[i, :]), axis=0)
-            final_h = final_h.reshape(1, 2 * self.hunits)
-            curr_est = final_h.dot(timew) + timeb
-            curr_est = curr_est[0]
-            curr_est = np.exp(curr_est) / sum(np.exp(curr_est))
-            est[i, :] = curr_est
-        return est
-
-    def _manual_predict_cnn(self, test_input):
-        ids = []
-        for tok in test_input:
-            if self.embedding_type == "grapheme_clusters_tf":
-                ids.append(tok.graph_clust_id)
-            elif self.embedding_type == "codepoints":
-                ids.append(tok.codepoint_id)
-            else:                        
-                ids.append(tok.graph_clust_id)
-
-        L = len(ids)
-        if L == 0:                     
-            return np.zeros((0, self.output_dim), dtype=np.float32)
-
-        x_batch = tf.constant([ids], dtype=tf.int32)
-
-        if getattr(self, "_cnn_infer_model", None) is None:
-            inp = Input(shape=(self.n,),
-                                        dtype="int32",
-                                        name="dyn_inp")
-
-            x = Embedding(input_dim=self.clusters_num,
-                                        output_dim=self.embedding_dim,
-                                        input_length=self.n,
-                                        name="dyn_emb")(inp)
-            x = Dropout(self.dropout_rate)(x, training=False)
-
-            conv_specs = [(9, 3), (5, 2), (3, 1)]
-            conv_outs = []
-            for k, dil in conv_specs:
-                y = Conv1D(128,
-                                        kernel_size=k,
-                                        dilation_rate=dil,
-                                        padding="same",
-                                        name=f"dyn_conv_k{k}_d{dil}")(x)
-                y = BatchNormalization(
-                        name=f"dyn_bn_k{k}_d{dil}")(y, training=False)
-                y = ReLU()(y)
-                conv_outs.append(y)
-
-            x = Maximum()(conv_outs)
-
-            x = TimeDistributed(
-                    Dense(self.hunits,
-                                        activation="relu"),
-                    name="dyn_td_hidden")(x)
-            x = Dropout(self.dropout_rate)(x, training=False)
-
-            out = TimeDistributed(
-                    Dense(self.output_dim,
-                                        activation="softmax"),
-                    name="dyn_td_out")(x)
-
-            self._cnn_infer_model = tf.keras.Model(inp, out, name="cnn_infer_dyn")
-            self._cnn_infer_model.trainable = False
-
-            self._cnn_infer_model.set_weights(self.model.get_weights())
-
-        y_pred = self._cnn_infer_model(x_batch, training=False).numpy()
-        return y_pred[0]   
-
-
-    def _compute_hc(self, weights, x_t, h_tm1, c_tm1):
-        """
-        Given weights of a LSTM model, the input at time t, and values for h and c at time t-1, this function compute
-        the values of h and c at time t.
-        Args:
-            weights: a list of three matrices, which are W (from input to cell), U (from h to cell), and b (bias)
-            respectively.
-            x_t: the input at time t
-            h_tm1: value of h for time t-1
-            c_tm1: value of c for time t-1
-        """
-        # Implementing forget, input, and output gates in LSTM model
-        warr, uarr, barr = weights
-        s_t = (x_t.dot(warr) + h_tm1.dot(uarr) + barr)
-        hunit = uarr.shape[0]
-        i = sigmoid(s_t[:, :hunit])
-        f = sigmoid(s_t[:, 1 * hunit:2 * hunit])
-        _c = np.tanh(s_t[:, 2 * hunit:3 * hunit])
-        o = sigmoid(s_t[:, 3 * hunit:])
-        c_t = i * _c + f * c_tm1
-        h_t = o * np.tanh(c_t)
-        return [h_t, c_t]
-
-    def segment_arbitrary_line(self, input_line):
-        """
-        This function uses the LSTM model to segment an unsegmented line and compare it to ICU and deepcut.
-        Args:
-            input_line: the string that needs to be segmented. It is supposed to be unsegmented
-        """
-        line = Line(input_line, "unsegmented")
-        grapheme_clusters_in_line = len(line.char_brkpoints) - 1
-
-        # Using LSTM model to segment the input line
-        if self.embedding_type == "codepoints":
-            x_data = []
-            for i in range(len(line.unsegmented)):
-                x_data.append(CodePoint(line.unsegmented[i], self.codepoint_dic))
-        else:
-            x_data = []
-            for i in range(grapheme_clusters_in_line):
-                char_start = line.char_brkpoints[i]
-                char_finish = line.char_brkpoints[i + 1]
-                curr_char = line.unsegmented[char_start: char_finish]
-                x_data.append(GraphemeCluster(curr_char, self.graph_clust_dic, self.letters_dic))
-        y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
-
-        # Making a pretty version of the output of the LSTM, where bars show the boundaries of words
-        y_hat_pretty = ""
-        if self.embedding_type == "codepoints":
-            for i in range(len(line.unsegmented)):
-                if y_hat.str[i] in ['b', 's']:
-                    y_hat_pretty += "|"
-                y_hat_pretty += line.unsegmented[i]
-            y_hat_pretty += "|"
-        else:
-            y_hat_pretty = ""
-            for i in range(grapheme_clusters_in_line):
-                char_start = line.char_brkpoints[i]
-                char_finish = line.char_brkpoints[i + 1]
-                curr_char = line.unsegmented[char_start: char_finish]
-                if y_hat.str[i] in ['b', 's']:
-                    y_hat_pretty += "|"
-                y_hat_pretty += curr_char
-            y_hat_pretty += "|"
-
-        return y_hat_pretty
-
-    def save_model(self):
+    def save_cnn_model(self):
         """
         This function saves the current trained model of this word_segmenter instance.
         """
         # Save the model using Keras
         model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         tf.saved_model.save(self.model, model_path)
-        # Save one np array that holds all weights
+
         file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
         np.save(str(file), self.model.weights)
 
-        # Save the model in json format, that has both weights and grapheme clusters dictionary
-        json_file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights.json")
-        with open(str(json_file), 'w') as wfile:
-            output = dict()
-            output["model"] = self.name
-            if "grapheme_clusters" in self.embedding_type:
-                output["dic"] = self.graph_clust_dic
-            elif "codepoints" in self.embedding_type:
-                if self.language == "Thai":
-                    output["dic"] = constants.THAI_CODE_POINT_DICTIONARY
-                if self.language == "Burmese":
-                    output["dic"] = constants.BURMESE_CODE_POINT_DICTIONARY
-            for i in range(len(self.model.weights)):
-                dic_model = dict()
-                dic_model["v"] = 1
-                mat = self.model.weights[i].numpy()
-                dim0 = mat.shape[0]
-                dim1 = 1
-                if len(mat.shape) == 1:
-                    dic_model["dim"] = [dim0]
-                else:
-                    dim1 = mat.shape[1]
-                    dic_model["dim"] = [dim0, dim1]
-                serial_mat = np.reshape(mat, newshape=[dim0 * dim1])
-                serial_mat = serial_mat.tolist()
-                dic_model["data"] = serial_mat
-                output["mat{}".format(i+1)] = dic_model
-            json.dump(output, wfile)
-        if 'AIP_MODEL_DIR' in os.environ:
-            upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
-
-    def save_cnn_model(self):
-        """
-        This function saves the current trained model of this word_segmenter instance.
-        """
-        # Save the model using Keras
-        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + ".keras"))
+        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
         self.model.save(model_path)
-        #tf.saved_model.save(self.model, model_path)
-        # Save one np array that holds all weights
-        file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
-        np.save(str(file), self.model.weights)
 
-        # Save the model in json format, that has both weights and grapheme clusters dictionary
-        """
-        json_file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights.json")
-        with open(str(json_file), 'w') as wfile:
-            output = dict()
-            output["model"] = self.name
-            if "grapheme_clusters" in self.embedding_type:
-                output["dic"] = self.graph_clust_dic
-            elif "codepoints" in self.embedding_type:
-                if self.language == "Thai":
-                    output["dic"] = constants.THAI_CODE_POINT_DICTIONARY
-                if self.language == "Burmese":
-                    output["dic"] = constants.BURMESE_CODE_POINT_DICTIONARY
-            for i in range(len(self.model.weights)):
-                dic_model = dict()
-                dic_model["v"] = 1
-                mat = self.model.weights[i].numpy()
-                dim0 = mat.shape[0]
-                dim1 = 1
-                if len(mat.shape) == 1:
-                    dic_model["dim"] = [dim0]
-                else:
-                    dim1 = mat.shape[1]
-                    dic_model["dim"] = [dim0, dim1]
-                serial_mat = np.reshape(mat, newshape=[dim0 * dim1])
-                serial_mat = serial_mat.tolist()
-                dic_model["data"] = serial_mat
-                output["mat{}".format(i+1)] = dic_model
-            json.dump(output, wfile)
         if 'AIP_MODEL_DIR' in os.environ:
             upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
-        """
+    
 
     def set_model(self, input_model):
         """
         This function set the current model to an input model
         input_model: the input model
         """
-        self.model = input_model
-
-    def set_cnn_model(self, path):
-        """
-        This function set the current model to an input model
-        input_model: the input model
-        """
         import keras
-        model = keras.saving.load_model(path, compile=False)
+        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
+        model = keras.saving.load_model(model_path, compile=False)
         self.model = model
 
 
@@ -820,10 +548,6 @@ def pick_cnn_model(model_name, embedding, train_data, eval_data):
         train_data: Dataset name used for training (e.g. "BEST").
         eval_data: Dataset name for evaluation (should correspond to training dataset structure).
     """
-    # Load the SavedModel as a Keras layer
-    model_path = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Models', model_name + '.keras')
-    # loaded_layer = keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
-    
     # Determine language from model name
     language = None
     if "Thai" in model_name:
@@ -865,7 +589,7 @@ def pick_cnn_model(model_name, embedding, train_data, eval_data):
         input_embedding_type=embedding
     )
     # Assign the loaded model to the WordSegmenter
-    word_segmenter.set_cnn_model(model_path)
+    word_segmenter.set_model(None)
     return word_segmenter
 
 def pick_lstm_model(model_name, embedding, train_data, eval_data):
