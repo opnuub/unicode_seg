@@ -376,11 +376,7 @@ class WordSegmenter:
         accuracy = Accuracy()
         for line in lines[:line_limit]:
             x_data, y_data = self._get_trainable_data(line.man_segmented)
-
-            # Using the manual predict function for lines because they are not necessarily self.n long
-            # y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
-            # y_hat.normalize_bies()
-            x = np.array([[tok.graph_clust_id for tok in x_data]])
+            x = np.array([[tok.graph_clust_id for tok in x_data]], dtype="float32")
             y_pred = np.squeeze(self.model.predict(x, verbose=0), axis=0)
             y_hat = Bies(input_bies=y_pred, input_type="mat")
             y_hat.normalize_bies()
@@ -406,7 +402,7 @@ class WordSegmenter:
         if self.evaluation_data in ["BEST", "exclusive BEST"]:
             texts_range = range(40, 60)
             if fast:
-                texts_range = range(40, 45)
+                texts_range = range(90, 97)
             category = ["news", "encyclopedia", "article", "novel"]
             for text_num in texts_range:
                 if verbose:
@@ -631,12 +627,14 @@ class WordSegmenter:
         This function saves the current trained model of this word_segmenter instance.
         """
         # Save the model using Keras
-        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + ".keras"))
-        self.model.save(model_path)
-        #tf.saved_model.save(self.model, model_path)
-        # Save one np array that holds all weights
+        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
+        tf.saved_model.save(self.model, model_path)
+
         file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
         np.save(str(file), self.model.weights)
+
+        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
+        self.model.save(model_path)
 
     def save_model(self):
         """
@@ -680,12 +678,15 @@ class WordSegmenter:
         if 'AIP_MODEL_DIR' in os.environ:
             upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
 
-    def set_model(self, input_model):
+    def set_model(self):
         """
         This function set the current model to an input model
         input_model: the input model
         """
-        self.model = input_model
+        import keras
+        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
+        model = keras.saving.load_model(model_path, compile=False)
+        self.model = model
 
     def set_cnn_model(self, path):
         """
@@ -696,6 +697,26 @@ class WordSegmenter:
         model = keras.saving.load_model(path, compile=False)
         self.model = model
 
+    def evaluate_cpu(self):
+        input_str = get_best_data_text(starting_text=90, ending_text=97, pseudo=False, exclusive=False)
+        x_data, y_data = self._get_trainable_data(input_str)
+        x = np.array([tok.graph_clust_id for tok in x_data], dtype="float32")
+        n = self.n
+        n_samples = len(x) // n 
+
+        x = np.asarray(x[: n_samples*n], dtype="float32") \
+                .reshape(n_samples, n)
+
+        y = y_data[: n_samples*n, :] \
+                .reshape(n_samples, n, -1)
+        self.model.compile(loss='categorical_crossentropy', optimizer=keras.optimizers.Adam(learning_rate=0.001), run_eagerly=False)
+
+        self.model.evaluate(x, y, batch_size=32, verbose=0)
+
+        t0 = time.perf_counter()
+        self.model.evaluate(x, y, batch_size=32, verbose=0)
+        return time.perf_counter() - t0
+
 def pick_cnn_model(model_name, embedding, train_data, eval_data):
     """
     Load a saved CNN-based word segmentation model and return a WordSegmenter instance.
@@ -705,10 +726,6 @@ def pick_cnn_model(model_name, embedding, train_data, eval_data):
         train_data: Dataset name used for training (e.g. "BEST").
         eval_data: Dataset name for evaluation (should correspond to training dataset structure).
     """
-    # Load the SavedModel as a Keras layer
-    model_path = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Models', model_name + '.keras')
-    # loaded_layer = keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
-    
     # Determine language from model name
     language = None
     if "Thai" in model_name:
@@ -750,7 +767,7 @@ def pick_cnn_model(model_name, embedding, train_data, eval_data):
         input_embedding_type=embedding
     )
     # Assign the loaded model to the WordSegmenter
-    word_segmenter.set_cnn_model(model_path)
+    word_segmenter.set_model()
     return word_segmenter
 
 def pick_lstm_model(model_name, embedding, train_data, eval_data):

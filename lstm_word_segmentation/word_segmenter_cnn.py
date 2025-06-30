@@ -352,8 +352,8 @@ class WordSegmenterCNN:
         )
 
         early_stop = EarlyStopping(
-            monitor="val_accuracy",      # metric to watch
-            patience=2,             # “no-improve” epochs before stopping
+            monitor="val_loss",      # metric to watch
+            patience=3,             # “no-improve” epochs before stopping
             restore_best_weights=True,
             verbose=1                # prints a message when stopping
         )
@@ -375,7 +375,7 @@ class WordSegmenterCNN:
         conv_specs = [(3, 1), (5, 2), (9, 3)]
         conv_outputs = []
         for k_size, dilation in conv_specs:
-            y = Conv1D(filters=16, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+            y = Conv1D(filters=self.embedding_dim, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
             y = BatchNormalization()(y)
             y = ReLU()(y)
             conv_outputs.append(y)
@@ -401,6 +401,7 @@ class WordSegmenterCNN:
             line_limit: number of lines to be tested. If set to -1, all lines will be tested.
             verbose: determines if we want to show results line by line
         """
+        total_time = 0
         lines = get_lines_of_text(file, "man_segmented")
         if len(lines) < line_limit:
             print("Warning: not enough lines in the test file")
@@ -408,7 +409,9 @@ class WordSegmenterCNN:
         for line in lines[:line_limit]:
             x_data, y_data = self._get_trainable_data(line.man_segmented)
             x = np.array([[tok.graph_clust_id for tok in x_data]], dtype="float32")
+            start = time.time()
             y_pred = np.squeeze(self.model.predict(x, verbose=0), axis=0)
+            total_time = total_time + time.time() - start
             y_hat = Bies(input_bies=y_pred, input_type="mat")
             y_hat.normalize_bies()
             # Updating overall accuracy using the new line
@@ -417,7 +420,7 @@ class WordSegmenterCNN:
         if verbose:
             print("The BIES accuracy (line by line) for file {} : {:.3f}".format(file, accuracy.get_bies_accuracy()))
             print("The F1 score (line by line) for file {} : {:.3f}".format(file, accuracy.get_f1_score()))
-        return accuracy
+        return accuracy, total_time
 
     def test_model_line_by_line(self, verbose, fast=False):
         """
@@ -426,6 +429,7 @@ class WordSegmenterCNN:
             verbose: determines if we want to see the the accuracy of each text that is being tested.
             fast: determines if we use small amount of text to run the test or not.
         """
+        total_time = 0
         line_limit = -1
         if fast:
             line_limit = 1000
@@ -433,7 +437,7 @@ class WordSegmenterCNN:
         if self.evaluation_data in ["BEST", "exclusive BEST"]:
             texts_range = range(40, 60)
             if fast:
-                texts_range = range(90, 96)
+                texts_range = range(90, 97)
             category = ["news", "encyclopedia", "article", "novel"]
             for text_num in texts_range:
                 if verbose:
@@ -447,7 +451,8 @@ class WordSegmenterCNN:
                     elif self.evaluation_data == "exclusive BEST":
                         file = Path.joinpath(Path(__file__).parent.parent.absolute(),
                                              "Data/exclusive_Best/{}/{}_".format(cat, cat) + text_num_str + ".txt")
-                    text_acc = self._test_text_line_by_line(file=file, line_limit=-1, verbose=verbose)
+                    text_acc, total = self._test_text_line_by_line(file=file, line_limit=-1, verbose=verbose)
+                    total_time += total
                     accuracy.merge_accuracy(text_acc)
 
         elif self.evaluation_data == "SAFT_Thai":
@@ -508,6 +513,7 @@ class WordSegmenterCNN:
         if verbose:
             print("The BIES accuracy by test_model_line_by_line function: {:.3f}".format(accuracy.get_bies_accuracy()))
             print("The F1 score by test_model_line_by_line function: {:.3f}".format(accuracy.get_f1_score()))
+            print(total_time)
         return accuracy
 
     def save_cnn_model(self):
