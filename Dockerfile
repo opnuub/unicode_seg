@@ -1,16 +1,19 @@
-FROM ubuntu:22.04
 FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
 
-FROM python:3.9-bookworm
-
-RUN apt-get -y update && apt-get -y upgrade
-RUN apt-get -y install pkg-config 
-RUN apt-get -y install libicu-dev
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev python3-distutils \
+        build-essential g++ make \
+        libopenblas-dev liblapack-dev \
+        pkg-config libicu-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
 
 COPY . /
 
-RUN pip install -r /requirements.txt
+RUN python3 -m pip install --upgrade pip && \
+    pip install -r requirements.txt
 
-ENTRYPOINT ["python", "train_cnn.py"]
+ENTRYPOINT ["python3", "train_thai_cnn.py"]

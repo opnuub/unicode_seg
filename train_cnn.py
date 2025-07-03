@@ -29,7 +29,7 @@ def main(args):
                                 input_epochs=args['epochs'], input_training_data="my", input_evaluation_data="my",
                                 input_language="Burmese", input_embedding_type="grapheme_clusters_tf")
     word_segmenter.train_model()
-    word_segmenter.save_model()
+    word_segmenter.save_cnn_model()
 
 if __name__ == "__main__":
     args = parser_args()

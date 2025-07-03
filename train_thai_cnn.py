@@ -1,4 +1,3 @@
-from lstm_word_segmentation.lstm_bayesian_optimization import LSTMBayesianOptimization
 from lstm_word_segmentation.word_segmenter_cnn import WordSegmenterCNN
 from lstm_word_segmentation.word_segmenter_cnn import pick_lstm_model, pick_cnn_model
 import time
@@ -17,10 +16,10 @@ bayes_optimization.perform_bayesian_optimization()
 
 model_name = "Thai_codepoints2-8"
 word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=200, input_t=10000, input_clusters_num=350,
-                               input_embedding_dim=8, input_hunits=23, input_dropout_rate=0, input_output_dim=4,
+                               input_embedding_dim=16, input_hunits=23, input_dropout_rate=0, input_output_dim=4,
                                input_epochs=5, input_training_data="BEST",
                                input_evaluation_data="BEST", input_language="Thai",
-                               input_embedding_type="grapheme_clusters_tf")
+                               input_embedding_type="grapheme_clusters_tf", filters=8, layers=2)
 word_segmenter.train_model()
 word_segmenter.save_cnn_model()
 
