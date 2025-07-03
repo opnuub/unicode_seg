@@ -15,7 +15,7 @@ bayes_optimization.perform_bayesian_optimization()
 
 # Train a new model -- choose name cautiously to not overwrite other models
 
-model_name = "Thai_codepoints3-8"
+model_name = "Thai_codepoints2-8"
 # word_segmenter = WordSegmenter(input_name=model_name, input_n=200, input_t=500000, input_clusters_num=350,
 #                                input_embedding_dim=16, input_hunits=23, input_dropout_rate=0.2, input_output_dim=4,
 #                                input_epochs=20, input_training_data="BEST",

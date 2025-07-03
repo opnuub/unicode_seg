@@ -15,10 +15,10 @@ bayes_optimization.perform_bayesian_optimization()
 
 # Train a new model -- choose name cautiously to not overwrite other models
 
-model_name = "Thai_codepoints3-64"
+model_name = "Thai_codepoints2-8"
 word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=200, input_t=10000, input_clusters_num=350,
-                               input_embedding_dim=64, input_hunits=23, input_dropout_rate=0.1, input_output_dim=4,
-                               input_epochs=10, input_training_data="BEST",
+                               input_embedding_dim=8, input_hunits=23, input_dropout_rate=0, input_output_dim=4,
+                               input_epochs=5, input_training_data="BEST",
                                input_evaluation_data="BEST", input_language="Thai",
                                input_embedding_type="grapheme_clusters_tf")
 word_segmenter.train_model()

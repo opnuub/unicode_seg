@@ -1,4 +1,5 @@
 FROM ubuntu:22.04
+FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
 
 FROM python:3.9-bookworm
 
@@ -12,4 +13,4 @@ COPY . /
 
 RUN pip install -r /requirements.txt
 
-ENTRYPOINT ["python", "train.py"]
+ENTRYPOINT ["python", "train_cnn.py"]

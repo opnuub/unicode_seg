@@ -103,7 +103,7 @@ class WordSegmenterCNN:
     """
     def __init__(self, input_name, input_n, input_t, input_clusters_num, input_embedding_dim, input_hunits,
                  input_dropout_rate, input_output_dim, input_epochs, input_training_data, input_evaluation_data,
-                 input_language, input_embedding_type):
+                 input_language, input_embedding_type, filters, layers):
         self.name = input_name
         self.n = input_n
         self.t = input_t
@@ -124,6 +124,8 @@ class WordSegmenterCNN:
         self.language = input_language
         self.embedding_type = input_embedding_type
         self.model = None
+        self.filters = filters
+        self.layers = layers
 
         # Constructing the grapheme cluster dictionary -- this will be used if self.embedding_type is Grapheme Clusters
         ratios = None
@@ -217,7 +219,7 @@ class WordSegmenterCNN:
             text = get_best_data_text(i, i+1, False, False)
             x_data, y_data = self._get_trainable_data(text)
             x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-            for pos in range(0, len(x), LENGTH):
+            for pos in range(0, len(x)-LENGTH+1, LENGTH):
                 x_chunk = x[pos : pos + LENGTH]
                 y_chunk = y[pos : pos + LENGTH]
                 yield x_chunk, y_chunk
@@ -330,14 +332,7 @@ class WordSegmenterCNN:
                 tf.TensorSpec(shape=(None,4), dtype=tf.int32)
             )
         )
-        import math
-        num_train_examples = base.cardinality().numpy()   # exact when the generator is finite
-        steps_per_epoch   = math.ceil(num_train_examples / 1024)
-        train_dataset = base.repeat().shuffle(50000, reshuffle_each_iteration=True).padded_batch(
-            batch_size=1024,
-            padded_shapes=([None], [None, 4]),
-            padding_values=(-1,0)
-        ).prefetch(tf.data.AUTOTUNE)
+        train_dataset = base.repeat().shuffle(50000, reshuffle_each_iteration=True).padded_batch(batch_size=1024, padded_shapes=([None], [None,4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
         
         valid_dataset = tf.data.Dataset.from_generator(
             lambda: self.data_generator(80, 90),
@@ -345,10 +340,16 @@ class WordSegmenterCNN:
                 tf.TensorSpec(shape=(None,), dtype=tf.int32),
                 tf.TensorSpec(shape=(None,4), dtype=tf.int32)
             )
-        ).padded_batch(
-            batch_size=1024,
-            padded_shapes=([None], [None, 4]),
-            padding_values=(-1,0)
+        ).padded_batch(batch_size=1024, padded_shapes=([None], [None,4]), padding_values=(-1,0))
+
+        checkpoiont_dir = Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/checkpoints")
+        checkpoiont_dir.mkdir(parents=True, exist_ok=True)
+
+        checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
+            filepath = str(checkpoiont_dir / "epoch_{epoch:02d}.keras"),
+            save_freq = "epoch",
+            save_weights_only = False,
+            verbose = 0
         )
 
         early_stop = EarlyStopping(
@@ -372,10 +373,10 @@ class WordSegmenterCNN:
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
-        conv_specs = [(3, 1), (5, 2), (9, 3)]
+        conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
         conv_outputs = []
         for k_size, dilation in conv_specs:
-            y = Conv1D(filters=self.embedding_dim, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+            y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
             y = BatchNormalization()(y)
             y = ReLU()(y)
             conv_outputs.append(y)
@@ -388,7 +389,7 @@ class WordSegmenterCNN:
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
-        history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop])
+        history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop, checkpoint_cb])
         save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         self.model = model
 
