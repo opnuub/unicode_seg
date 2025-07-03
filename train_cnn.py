@@ -22,12 +22,12 @@ def main(args):
                                     input_embedding_dim=16, input_hunits=23, input_dropout_rate=0.1, input_output_dim=4,
                                     input_epochs=args['epochs'], input_training_data="BEST",
                                     input_evaluation_data="BEST", input_language='Thai',
-                                    input_embedding_type="codepoints", filters=args['filters'], layers=args['layers'])
+                                    input_embedding_type="grapheme_clusters_tf", filters=args['filters'], layers=args['layers'])
     else:
         word_segmenter = WordSegmenterCNN(input_name=args['name'], input_n=5, input_t=500, input_clusters_num=350,
                                 input_embedding_dim=28, input_hunits=14, input_dropout_rate=0.1, input_output_dim=4,
                                 input_epochs=args['epochs'], input_training_data="my", input_evaluation_data="my",
-                                input_language="Burmese", input_embedding_type="codepoints")
+                                input_language="Burmese", input_embedding_type="grapheme_clusters_tf")
     word_segmenter.train_model()
     word_segmenter.save_model()
 
