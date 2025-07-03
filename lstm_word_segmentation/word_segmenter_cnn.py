@@ -389,7 +389,7 @@ class WordSegmenterCNN:
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
-        history = model.fit(train_dataset, steps_per_epoch=100, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop, checkpoint_cb])
+        history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop, checkpoint_cb])
         save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         self.model = model
 
@@ -528,8 +528,8 @@ class WordSegmenterCNN:
         file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights")
         np.save(str(file), self.model.weights)
 
-        model_path = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
-        self.model.save(model_path)
+        model_paths = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
+        self.model.save(model_paths)
 
         if 'AIP_MODEL_DIR' in os.environ:
             upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
