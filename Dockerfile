@@ -1,11 +1,8 @@
-FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+FROM europe-docker.pkg.dev/vertex-ai/training/tf-gpu.2-16.py310:latest
 
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-dev python3-distutils \
-        build-essential g++ make \
-        libopenblas-dev liblapack-dev \
         pkg-config libicu-dev && \
     rm -rf /var/lib/apt/lists/*
 
