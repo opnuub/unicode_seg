@@ -6,7 +6,7 @@ from keras.models import Sequential
 from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Embedding, Dropout
 from tensorflow import keras
 import tensorflow as tf
-from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum)
+from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum, Add)
 from keras.models import Model
 from keras.callbacks import EarlyStopping
 import shutil, os
@@ -103,7 +103,7 @@ class WordSegmenterCNN:
     """
     def __init__(self, input_name, input_n, input_t, input_clusters_num, input_embedding_dim, input_hunits,
                  input_dropout_rate, input_output_dim, input_epochs, input_training_data, input_evaluation_data,
-                 input_language, input_embedding_type, filters, layers):
+                 input_language, input_embedding_type, filters, layers, option):
         self.name = input_name
         self.n = input_n
         self.t = input_t
@@ -126,6 +126,7 @@ class WordSegmenterCNN:
         self.model = None
         self.filters = filters
         self.layers = layers
+        self.option = option
 
         # Constructing the grapheme cluster dictionary -- this will be used if self.embedding_type is Grapheme Clusters
         ratios = None
@@ -373,17 +374,44 @@ class WordSegmenterCNN:
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
-        conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
-        conv_outputs = []
-        for k_size, dilation in conv_specs:
-            y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+        if self.option == 1:
+            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
+            conv_outputs = []
+            for k_size, dilation in conv_specs:
+                y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+                y = BatchNormalization()(y)
+                y = ReLU()(y)
+                conv_outputs.append(y)
+            x = Maximum()(conv_outputs)
+            x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
+            x = Dropout(self.dropout_rate)(x)
+            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
+        elif self.option == 2:
+            y = Conv1D(filters=self.filters, kernel_size=3, dilation_rate=1, padding="same")(x)
+            y = BatchNormalization()(y)
+            x = ReLU()(y)
+            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
+        elif self.option == 3:
+            y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=1, padding="same")(x)
+            y = BatchNormalization()(y)
+            x = ReLU()(y)
+            y = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same")(x)
             y = BatchNormalization()(y)
             y = ReLU()(y)
-            conv_outputs.append(y)
-        x = Maximum()(conv_outputs)
-        x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
-        x = Dropout(self.dropout_rate)(x)
-        out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
+            x = Add()([x, y])
+            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x)
+        elif self.option == 4:
+            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
+            conv_outputs = []
+            for k_size, dilation in conv_specs:
+                y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+                y = BatchNormalization()(y)
+                y = ReLU()(y)
+                conv_outputs.append(y)
+            x = Maximum()(conv_outputs)
+            x = Dense(self.hunits, activation="relu")(x)
+            x = Dropout(self.dropout_rate)(x)
+            out = Dense(self.output_dim, activation="softmax")(x) 
         model = Model(inp, out, name="attacut")
         opt = keras.optimizers.Adam(learning_rate=0.001)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
