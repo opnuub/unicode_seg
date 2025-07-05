@@ -19,7 +19,7 @@ word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=200, input_t=10
                                input_embedding_dim=16, input_hunits=23, input_dropout_rate=0, input_output_dim=4,
                                input_epochs=5, input_training_data="BEST",
                                input_evaluation_data="BEST", input_language="Thai",
-                               input_embedding_type="grapheme_clusters_tf", filters=8, layers=2)
+                               input_embedding_type="grapheme_clusters_tf", filters=8, layers=2, option=1)
 word_segmenter.train_model()
 word_segmenter.save_cnn_model()
 
