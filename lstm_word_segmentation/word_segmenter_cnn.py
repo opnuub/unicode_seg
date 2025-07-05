@@ -412,6 +412,13 @@ class WordSegmenterCNN:
             x = Dense(self.hunits, activation="relu")(x)
             x = Dropout(self.dropout_rate)(x)
             out = Dense(self.output_dim, activation="softmax")(x) 
+        elif self.option == 5:
+            y = Conv1D(filters=self.filters, kernel_size=3, dilation_rate=1, padding="same")(x)
+            y = BatchNormalization()(y)
+            x = ReLU()(y)
+            x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
+            x = Dropout(self.dropout_rate)(x)
+            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
         model = Model(inp, out, name="attacut")
         opt = keras.optimizers.Adam(learning_rate=0.001)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
