@@ -374,7 +374,7 @@ class WordSegmenterCNN:
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
-        if self.option == 1:
+        if self.option == 1: #normal
             conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
             conv_outputs = []
             for k_size, dilation in conv_specs:
@@ -386,13 +386,13 @@ class WordSegmenterCNN:
             x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
             x = Dropout(self.dropout_rate)(x)
             out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
-        elif self.option == 2:
+        elif self.option == 2: # 1 layer cnn
             y = Conv1D(filters=self.filters, kernel_size=3, dilation_rate=1, padding="same")(x)
             y = BatchNormalization()(y)
             x = ReLU()(y)
             out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
-        elif self.option == 3:
-            y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=1, padding="same")(x)
+        elif self.option == 3: # 2 layer sequential cnn
+            y = Conv1D(filters=self.filters, kernel_size=3, dilation_rate=1, padding="same")(x)
             y = BatchNormalization()(y)
             x = ReLU()(y)
             y = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same")(x)
@@ -400,7 +400,7 @@ class WordSegmenterCNN:
             y = ReLU()(y)
             x = Add()([x, y])
             out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x)
-        elif self.option == 4:
+        elif self.option == 4: # no time distributed
             conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
             conv_outputs = []
             for k_size, dilation in conv_specs:
