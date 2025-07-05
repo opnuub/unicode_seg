@@ -11,7 +11,7 @@ In this project, we develop a bi-directional LSTM model for word segmentation. F
                                  train_data="exclusive BEST", eval_data="exclusive BEST")
   ```
 
-  You need to specify three hyper-parameters: `embedding`, `train_data`, and `eval_data`. Please refer to [Models Specicitaions](https://github.com/SahandFarhoodi/word_segmentation/blob/work/Models%20Specifications.md) for a detailed explanation of these hyper-parameters, and also for a list of trained models ready to be used in this repository and their specifications. If you don't have time to do that, just pick one of the trained models and make sure that name of the embedding you choose appears in the model name (`train_data` and `eval-data` doesn't affect segmentation of arbitrary inputs). Next, you can use the following commands to specify your input and segment it:
+  You need to specify three hyper-parameters: `embedding`, `train_data`, and `eval_data`. Please refer to [Models Specifications](https://github.com/SahandFarhoodi/word_segmentation/blob/work/Models%20Specifications.md) for a detailed explanation of these hyper-parameters, and also for a list of trained models ready to be used in this repository and their specifications. If you don't have time to do that, just pick one of the trained models and make sure that name of the embedding you choose appears in the model name (`train_data` and `eval-data` doesn't affect segmentation of arbitrary inputs). Next, you can use the following commands to specify your input and segment it:
 
   ```python
   line = "ทำสิ่งต่างๆ ได้มากขึ้นขณะที่อุปกรณ์ล็อกและชาร์จอยู่ด้วยโหมดแอมเบียนท์"
