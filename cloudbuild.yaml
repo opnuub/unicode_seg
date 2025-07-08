@@ -2,7 +2,7 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: [
     'build',
-    '-t', 'http://us-docker.pkg.dev/positive-nuance-460806-v3/unicode/cnn:latest',
+    '-t', 'us-docker.pkg.dev/positive-nuance-460806-v3/unicode/cnn:latest',
     '.'
   ]
   id: 'CNN'
