@@ -443,6 +443,11 @@ class WordSegmenterCNN:
             x = SeparableConv1D(filters=self.hunits, kernel_size=1, padding="same", activation="relu")(x)
             x = Dropout(self.dropout_rate)(x)
             out = SeparableConv1D(filters=self.output_dim, kernel_size=1, padding="same", activation="softmax")(x) 
+        elif self.option == 8: # 1 layer dilated cnn
+            y = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same")(x)
+            y = BatchNormalization()(y)
+            x = ReLU()(y)
+            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
         model = Model(inp, out, name="attacut")
         opt = keras.optimizers.Adam(learning_rate=0.001)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
