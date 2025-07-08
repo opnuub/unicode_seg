@@ -6,7 +6,7 @@ from keras.models import Sequential
 from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Embedding, Dropout
 from tensorflow import keras
 import tensorflow as tf
-from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum, Add)
+from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum, Add, SeparableConv1D)
 from keras.models import Model
 from keras.callbacks import EarlyStopping
 import shutil, os
@@ -419,6 +419,30 @@ class WordSegmenterCNN:
             x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
             x = Dropout(self.dropout_rate)(x)
             out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
+        elif self.option == 6: # no time distributed + dense -> conv1d
+            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
+            conv_outputs = []
+            for k_size, dilation in conv_specs:
+                y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+                y = BatchNormalization()(y)
+                y = ReLU()(y)
+                conv_outputs.append(y)
+            x = Maximum()(conv_outputs)
+            x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
+            x = Dropout(self.dropout_rate)(x)
+            out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
+        elif self.option == 7: # depthwise seperable parallel cnn
+            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
+            conv_outputs = []
+            for k_size, dilation in conv_specs:
+                y = SeparableConv1D(filters=self.filters, depth_multiplier=1, kernel_size=k_size, dilation_rate=dilation, padding="same", use_bias=False)(x)
+                y = BatchNormalization()(y)
+                y = ReLU()(y)
+                conv_outputs.append(y)
+            x = Maximum()(conv_outputs)
+            x = SeparableConv1D(filters=self.hunits, kernel_size=1, padding="same", activation="relu")(x)
+            x = Dropout(self.dropout_rate)(x)
+            out = SeparableConv1D(filters=self.output_dim, kernel_size=1, padding="same", activation="softmax")(x) 
         model = Model(inp, out, name="attacut")
         opt = keras.optimizers.Adam(learning_rate=0.001)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
