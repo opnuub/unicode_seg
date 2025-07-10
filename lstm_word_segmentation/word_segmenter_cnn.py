@@ -103,7 +103,7 @@ class WordSegmenterCNN:
     """
     def __init__(self, input_name, input_n, input_t, input_clusters_num, input_embedding_dim, input_hunits,
                  input_dropout_rate, input_output_dim, input_epochs, input_training_data, input_evaluation_data,
-                 input_language, input_embedding_type, filters, layers, option):
+                 input_language, input_embedding_type, filters, option):
         self.name = input_name
         self.n = input_n
         self.t = input_t
@@ -125,7 +125,6 @@ class WordSegmenterCNN:
         self.embedding_type = input_embedding_type
         self.model = None
         self.filters = filters
-        self.layers = layers
         self.option = option
 
         # Constructing the grapheme cluster dictionary -- this will be used if self.embedding_type is Grapheme Clusters
@@ -219,7 +218,10 @@ class WordSegmenterCNN:
         for i in range(start, end):
             text = get_best_data_text(i, i+1, False, False)
             x_data, y_data = self._get_trainable_data(text)
-            x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+            if self.embedding_type == 'grapheme_clusters_tf':
+                x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+            elif self.embedding_type == 'codepoints':
+                x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
             for pos in range(0, len(x)-LENGTH+1, LENGTH):
                 x_chunk = x[pos : pos + LENGTH]
                 y_chunk = y[pos : pos + LENGTH]
@@ -374,53 +376,8 @@ class WordSegmenterCNN:
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
-        if self.option == 1: #normal
-            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
-            conv_outputs = []
-            for k_size, dilation in conv_specs:
-                y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
-                y = BatchNormalization()(y)
-                y = ReLU()(y)
-                conv_outputs.append(y)
-            x = Maximum()(conv_outputs)
-            x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
-            x = Dropout(self.dropout_rate)(x)
-            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
-        elif self.option == 2: # 1 layer cnn
-            y = Conv1D(filters=self.filters, kernel_size=3, dilation_rate=1, padding="same")(x)
-            y = BatchNormalization()(y)
-            x = ReLU()(y)
-            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
-        elif self.option == 3: # 2 layer sequential cnn
-            y = Conv1D(filters=self.filters, kernel_size=3, dilation_rate=1, padding="same")(x)
-            y = BatchNormalization()(y)
-            x = ReLU()(y)
-            y = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same")(x)
-            y = BatchNormalization()(y)
-            y = ReLU()(y)
-            x = Add()([x, y])
-            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x)
-        elif self.option == 4: # no time distributed
-            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
-            conv_outputs = []
-            for k_size, dilation in conv_specs:
-                y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
-                y = BatchNormalization()(y)
-                y = ReLU()(y)
-                conv_outputs.append(y)
-            x = Maximum()(conv_outputs)
-            x = Dense(self.hunits, activation="relu")(x)
-            x = Dropout(self.dropout_rate)(x)
-            out = Dense(self.output_dim, activation="softmax")(x) 
-        elif self.option == 5:
-            y = Conv1D(filters=self.filters, kernel_size=3, dilation_rate=1, padding="same")(x)
-            y = BatchNormalization()(y)
-            x = ReLU()(y)
-            x = TimeDistributed(Dense(self.hunits, activation="relu"))(x)
-            x = Dropout(self.dropout_rate)(x)
-            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
-        elif self.option == 6: # no time distributed + dense -> conv1d
-            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
+        if self.option == 1: # no time distributed + dense -> conv1d
+            conv_specs = [(3, 1), (5, 2)]
             conv_outputs = []
             for k_size, dilation in conv_specs:
                 y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
@@ -431,8 +388,8 @@ class WordSegmenterCNN:
             x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
             x = Dropout(self.dropout_rate)(x)
             out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
-        elif self.option == 7: # depthwise seperable parallel cnn
-            conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
+        elif self.option == 2: # depthwise seperable parallel cnn
+            conv_specs = [(3, 1), (5, 2)]
             conv_outputs = []
             for k_size, dilation in conv_specs:
                 y = SeparableConv1D(filters=self.filters, depth_multiplier=1, kernel_size=k_size, dilation_rate=dilation, padding="same", use_bias=False)(x)
@@ -443,11 +400,6 @@ class WordSegmenterCNN:
             x = SeparableConv1D(filters=self.hunits, kernel_size=1, padding="same", activation="relu")(x)
             x = Dropout(self.dropout_rate)(x)
             out = SeparableConv1D(filters=self.output_dim, kernel_size=1, padding="same", activation="softmax")(x) 
-        elif self.option == 8: # 1 layer dilated cnn
-            y = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same")(x)
-            y = BatchNormalization()(y)
-            x = ReLU()(y)
-            out = TimeDistributed(Dense(self.output_dim, activation="softmax"))(x) 
         model = Model(inp, out, name="attacut")
         opt = keras.optimizers.Adam(learning_rate=0.001)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
@@ -486,6 +438,31 @@ class WordSegmenterCNN:
             print("The BIES accuracy (line by line) for file {} : {:.3f}".format(file, accuracy.get_bies_accuracy()))
             print("The F1 score (line by line) for file {} : {:.3f}".format(file, accuracy.get_f1_score()))
         return accuracy, total_time
+
+    def benchmark_inference(self, input_str, repeats):
+        line = Line(input_str, input_type="unsegmented")
+        grapheme_clusters_in_line = len(line.char_brkpoints) - 1
+        x_data = []
+        for i in range(grapheme_clusters_in_line):
+            char_start = line.char_brkpoints[i]
+            char_finish = line.char_brkpoints[i + 1]
+            curr_char = line.unsegmented[char_start: char_finish]
+            x_data.append(GraphemeCluster(curr_char, self.graph_clust_dic, self.letters_dic))
+        graph_clust_ids = [tok.graph_clust_id for tok in x_data]
+        graph_clust_ids = np.asarray(graph_clust_ids, dtype="int32")
+        x_batch = graph_clust_ids[None, :] 
+        self.model.compile(
+            loss="categorical_crossentropy",
+            optimizer=keras.optimizers.Adam(1e-3),
+            run_eagerly=False,
+        )
+        self.model(x_batch, training=False)
+        t0 = time.perf_counter()
+        for _ in range(repeats):
+            self.model(x_batch, training=False)
+        total_time = (time.perf_counter() - t0)
+
+        print(f"{total_time*1000} ms")
 
     def test_model_line_by_line(self, verbose, fast=False):
         """
@@ -657,7 +634,9 @@ def pick_cnn_model(model_name, embedding, train_data, eval_data):
         input_training_data=train_data,
         input_evaluation_data=eval_data,
         input_language=language,
-        input_embedding_type=embedding
+        input_embedding_type=embedding,
+        filters=32,
+        option=7
     )
     # Assign the loaded model to the WordSegmenter
     word_segmenter.set_model(None)
