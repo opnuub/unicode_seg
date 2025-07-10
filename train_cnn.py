@@ -12,6 +12,9 @@ def parser_args():
     parser.add_argument('--name', help='Model name, follow Model Specifications convention', type=str, default="test")
     parser.add_argument('--option', help='', type=int, default=1)
     parser.add_argument('--embedding', help='Embedding type such as grapheme_clusters_tf or codepoints', type=str, default="codepoints")
+    parser.add_argument('--edim', help='Input embedding dimensions', type=int, default=16)
+    parser.add_argument('--hunits', help='Number of neurons after convolution layers', type=int, default=23)
+    parser.add_argument('--learning-rate', help='Learning rate', type=float, default=0.001)
     args = parser.parse_args()
     arguments = args.__dict__
     return arguments
@@ -20,10 +23,10 @@ def main(args):
     download_from_gcs(args['path'], 'Data')
     if args['language'] == 'Thai':
         word_segmenter = WordSegmenterCNN(input_name=args['name'], input_n=50, input_t=10000, input_clusters_num=350,
-                                    input_embedding_dim=16, input_hunits=23, input_dropout_rate=0.1, input_output_dim=4,
+                                    input_embedding_dim=args['edim'], input_hunits=args['hunits'], input_dropout_rate=0.1, input_output_dim=4,
                                     input_epochs=args['epochs'], input_training_data="BEST",
                                     input_evaluation_data="BEST", input_language='Thai',
-                                    input_embedding_type=args['embedding'], filters=args['filters'], option=args['option'])
+                                    input_embedding_type=args['embedding'], filters=args['filters'], option=args['option'], learning_rate=args['learning_rate'])
     else:
         word_segmenter = WordSegmenterCNN(input_name=args['name'], input_n=5, input_t=500, input_clusters_num=350,
                                 input_embedding_dim=28, input_hunits=14, input_dropout_rate=0.1, input_output_dim=4,

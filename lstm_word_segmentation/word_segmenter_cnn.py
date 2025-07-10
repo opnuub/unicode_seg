@@ -22,7 +22,7 @@ from .bies import Bies
 from .grapheme_cluster import GraphemeCluster
 from .code_point import CodePoint
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 class KerasBatchGenerator(object):
     """
@@ -103,7 +103,7 @@ class WordSegmenterCNN:
     """
     def __init__(self, input_name, input_n, input_t, input_clusters_num, input_embedding_dim, input_hunits,
                  input_dropout_rate, input_output_dim, input_epochs, input_training_data, input_evaluation_data,
-                 input_language, input_embedding_type, filters, option):
+                 input_language, input_embedding_type, filters, option, edim, hunits, learning_rate):
         self.name = input_name
         self.n = input_n
         self.t = input_t
@@ -126,6 +126,7 @@ class WordSegmenterCNN:
         self.model = None
         self.filters = filters
         self.option = option
+        self.learning_rate = learning_rate
 
         # Constructing the grapheme cluster dictionary -- this will be used if self.embedding_type is Grapheme Clusters
         ratios = None
@@ -401,12 +402,27 @@ class WordSegmenterCNN:
             x = Dropout(self.dropout_rate)(x)
             out = SeparableConv1D(filters=self.output_dim, kernel_size=1, padding="same", activation="softmax")(x) 
         model = Model(inp, out, name="attacut")
-        opt = keras.optimizers.Adam(learning_rate=0.001)
+        opt = keras.optimizers.Adam(learning_rate=self.learning_rate)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
         history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop, checkpoint_cb])
-        save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
+        import hypertune
+        hp_metric = history.history['val_accuracy'][-1]
+        param_count = model.count_params()
+        size_mb = param_count * 4 / 1_048_576
+        hpt = hypertune.HyperTune()
+        hpt.report_hyperparameter_tuning_metric(
+            hyperparameter_metric_tag='accuracy',
+            metric_value=hp_metric,
+            global_step=self.epochs
+        )
+        hpt.report_hyperparameter_tuning_metric(
+            hyperparameter_metric_tag='model_size',
+            metric_value=size_mb,
+            global_step=self.epochs
+        )
+        #save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         self.model = model
 
     def _test_text_line_by_line(self, file, line_limit, verbose):
@@ -451,12 +467,22 @@ class WordSegmenterCNN:
         graph_clust_ids = [tok.graph_clust_id for tok in x_data]
         graph_clust_ids = np.asarray(graph_clust_ids, dtype="int32")
         x_batch = graph_clust_ids[None, :] 
+        true_bies = line.get_bies_grapheme_clusters("icu")
+        y_data = true_bies.mat
         self.model.compile(
             loss="categorical_crossentropy",
             optimizer=keras.optimizers.Adam(1e-3),
             run_eagerly=False,
         )
-        self.model(x_batch, training=False)
+        y_pred = self.model(x_batch, training=False)
+        y_pred = np.squeeze(y_pred, axis=0)
+        y_hat = Bies(input_bies=y_pred, input_type="mat")
+        y_hat.normalize_bies()
+        actual_y = Bies(input_bies=y_data, input_type="mat")
+        accuracy = Accuracy()
+        accuracy.update(true_bies=actual_y.str, est_bies=y_hat.str)
+        print(accuracy.get_bies_accuracy())
+        print(accuracy.get_f1_score())
         t0 = time.perf_counter()
         for _ in range(repeats):
             self.model(x_batch, training=False)
