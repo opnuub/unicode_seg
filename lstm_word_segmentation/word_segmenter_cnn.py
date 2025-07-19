@@ -4,10 +4,9 @@ import json, os, time
 import hypertune
 from icu import Char
 from keras.models import Sequential
-from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Embedding, Dropout
+from keras.layers import Dense, TimeDistributed, Embedding, Dropout, Input, Conv1D, BatchNormalization, ReLU, Maximum
 from tensorflow import keras
 import tensorflow as tf
-from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum, Add, SeparableConv1D)
 from keras.models import Model
 from keras.callbacks import EarlyStopping
 
@@ -19,8 +18,6 @@ from .line import Line
 from .bies import Bies
 from .grapheme_cluster import GraphemeCluster
 from .code_point import CodePoint
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 class KerasBatchGenerator(object):
     """
