@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
-import json
+import json, os, time
+import hypertune
 from icu import Char
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Embedding, Dropout
@@ -9,9 +10,6 @@ import tensorflow as tf
 from keras.layers import (Input, Conv1D, BatchNormalization, ReLU, Maximum, Add, SeparableConv1D)
 from keras.models import Model
 from keras.callbacks import EarlyStopping
-import shutil, os
-from google.cloud import storage
-import time
 
 from . import constants
 from .helpers import sigmoid, save_training_plot, upload_to_gcs
@@ -103,7 +101,7 @@ class WordSegmenterCNN:
     """
     def __init__(self, input_name, input_n, input_t, input_clusters_num, input_embedding_dim, input_hunits,
                  input_dropout_rate, input_output_dim, input_epochs, input_training_data, input_evaluation_data,
-                 input_language, input_embedding_type, filters, option, edim, hunits, learning_rate):
+                 input_language, input_embedding_type, filters, layers, learning_rate):
         self.name = input_name
         self.n = input_n
         self.t = input_t
@@ -125,7 +123,7 @@ class WordSegmenterCNN:
         self.embedding_type = input_embedding_type
         self.model = None
         self.filters = filters
-        self.option = option
+        self.layers = layers
         self.learning_rate = learning_rate
 
         # Constructing the grapheme cluster dictionary -- this will be used if self.embedding_type is Grapheme Clusters
@@ -465,37 +463,25 @@ class WordSegmenterCNN:
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
-        if self.option == 1: # no time distributed + dense -> conv1d
-            conv_specs = [(3, 1), (5, 2)]
-            conv_outputs = []
-            for k_size, dilation in conv_specs:
-                y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
-                y = BatchNormalization()(y)
-                y = ReLU()(y)
-                conv_outputs.append(y)
-            x = Maximum()(conv_outputs)
-            x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
-            x = Dropout(self.dropout_rate)(x)
-            out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
-        elif self.option == 2: # depthwise seperable parallel cnn
-            conv_specs = [(3, 1), (5, 2)]
-            conv_outputs = []
-            for k_size, dilation in conv_specs:
-                y = SeparableConv1D(filters=self.filters, depth_multiplier=1, kernel_size=k_size, dilation_rate=dilation, padding="same", use_bias=False)(x)
-                y = BatchNormalization()(y)
-                y = ReLU()(y)
-                conv_outputs.append(y)
-            x = Maximum()(conv_outputs)
-            x = SeparableConv1D(filters=self.hunits, kernel_size=1, padding="same", activation="relu")(x)
-            x = Dropout(self.dropout_rate)(x)
-            out = SeparableConv1D(filters=self.output_dim, kernel_size=1, padding="same", activation="softmax")(x) 
-        model = Model(inp, out, name="attacut")
+        conv_specs = [(3, 1), (5, 2), (9, 3)][:self.layers]
+        conv_outputs = []
+        for k_size, dilation in conv_specs:
+            y = Conv1D(filters=self.filters, kernel_size=k_size, dilation_rate=dilation, padding="same")(x)
+            y = BatchNormalization()(y)
+            y = ReLU()(y)
+            conv_outputs.append(y)
+        x = Maximum()(conv_outputs)
+        x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
+        x = Dropout(self.dropout_rate)(x)
+        out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
+        model = Model(inp, out)
         opt = keras.optimizers.Adam(learning_rate=self.learning_rate)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
         history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop, checkpoint_cb])
-        import hypertune
+
+        # Optional hyperparameter tuning
         hp_metric = history.history['val_accuracy'][-1]
         param_count = model.count_params()
         size_mb = param_count * 4 / 1_048_576

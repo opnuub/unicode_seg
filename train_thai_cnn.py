@@ -28,7 +28,7 @@ word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=200, input_t=10
                                input_embedding_dim=40, input_hunits=27, input_dropout_rate=0.1, input_output_dim=4,
                                input_epochs=1, input_training_data="BEST",
                                input_evaluation_data="BEST", input_language="Thai",
-                               input_embedding_type="codepoints", filters=8, option=1, edim=40, hunits=27, learning_rate=0.001)
+                               input_embedding_type="codepoints", filters=8, layers=3, learning_rate=0.001)
 word_segmenter.set_model("1")
 word_segmenter._manual_predict("1")
 # word_segmenter.train_model()
