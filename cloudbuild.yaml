@@ -2,7 +2,7 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: [
     'build',
-    '-t', 'us-docker.pkg.dev/positive-nuance-460806-v3/unicode/cnn:latest',
+    '-t', 'us-central1-docker.pkg.dev/robotic-totem-466409-u7/cnn/cnn:latest',
     '.'
   ]
   id: 'CNN'
@@ -11,4 +11,4 @@ options:
  logging: CLOUD_LOGGING_ONLY
 
 images:
-- 'us-docker.pkg.dev/positive-nuance-460806-v3/unicode/cnn:latest'
+- 'us-central1-docker.pkg.dev/robotic-totem-466409-u7/cnn/cnn:latest'

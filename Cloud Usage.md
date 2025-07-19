@@ -1,11 +1,11 @@
 To bind the repository to Google Cloud Platform, follow the steps below:
 
 1. In Google Cloud API & Services, enable 
-    - Cloud Logging API
     - Artifact Registry API
     - Vertex AI API
     - Cloud Pub/Sub API
     - Cloud Build API
+    - Secret Manager API
 
 2. Create a Google Cloud Storage Bucket, upload the dataset into gs://bucket_name/Data/ with the following directory structure:\
 Data/\
