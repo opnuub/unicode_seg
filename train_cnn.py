@@ -22,11 +22,11 @@ def parser_args():
 def main(args):
     download_from_gcs(args['path'], 'Data')
     if args['language'] == 'Thai':
-        word_segmenter = WordSegmenterCNN(input_name=args['name'], input_n=50, input_t=10000, input_clusters_num=350,
-                                    input_embedding_dim=args['edim'], input_hunits=args['hunits'], input_dropout_rate=0.1, input_output_dim=4,
-                                    input_epochs=args['epochs'], input_training_data="BEST",
-                                    input_evaluation_data="BEST", input_language='Thai', layers=args['layers'],
-                                    input_embedding_type=args['embedding'], filters=args['filters'], learning_rate=args['learning_rate'])
+        word_segmenter = WordSegmenterCNN(input_name=args['name'], input_clusters_num=350, input_embedding_dim=args['edim'], 
+                                          input_hunits=args['hunits'], input_dropout_rate=0.1, input_output_dim=4,
+                                          input_epochs=args['epochs'], input_training_data="BEST", input_evaluation_data="BEST", 
+                                          input_language='Thai', layers=args['layers'], input_embedding_type=args['embedding'], 
+                                          filters=args['filters'], learning_rate=args['learning_rate'])
     else:
         word_segmenter = WordSegmenterCNN(input_name=args['name'], input_n=5, input_t=500, input_clusters_num=350,
                                 input_embedding_dim=28, input_hunits=14, input_dropout_rate=0.1, input_output_dim=4,
