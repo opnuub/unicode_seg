@@ -1,7 +1,7 @@
 To bind the repository to Google Cloud Platform, follow the steps below:
 
 1. In Google Cloud API & Services, enable 
-    - Cloud Logging API
+    - Secret Manager API
     - Artifact Registry API
     - Vertex AI API
     - Cloud Pub/Sub API
