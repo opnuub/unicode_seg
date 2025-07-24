@@ -223,7 +223,6 @@ class WordSegmenterCNN:
                     x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
                 elif self.embedding_type == 'codepoints':
                     x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-                    LENGTH = 400
                 for pos in range(0, len(x)-LENGTH+1, LENGTH):
                     x_chunk = x[pos : pos + LENGTH]
                     y_chunk = y[pos : pos + LENGTH]
