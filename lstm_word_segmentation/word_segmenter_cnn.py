@@ -4,7 +4,7 @@ import json, os, time, io
 import hypertune
 from icu import Char
 from keras.models import Sequential
-from keras.layers import Dense, TimeDistributed, Embedding, Dropout, Input, Conv1D, BatchNormalization, ReLU, Maximum
+from keras.layers import Dense, TimeDistributed, Embedding, Dropout, Input, Conv1D, Maximum
 from tensorflow import keras
 import tensorflow as tf
 from keras.models import Model
@@ -12,7 +12,7 @@ from keras.callbacks import EarlyStopping
 
 from . import constants
 from .helpers import sigmoid, save_training_plot, upload_to_gcs
-from .text_helpers import get_segmented_file_in_one_line, get_best_data_text, get_lines_of_text, get_hkcancor_text
+from .text_helpers import get_best_data_text, get_lines_of_text
 from .accuracy import Accuracy
 from .line import Line
 from .bies import Bies
