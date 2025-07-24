@@ -1,9 +1,8 @@
 from pathlib import Path
 import numpy as np
-import json, os, time, io
+import os, time
 import hypertune
 from icu import Char
-from keras.models import Sequential
 from keras.layers import Dense, TimeDistributed, Embedding, Dropout, Input, Conv1D, Maximum
 from tensorflow import keras
 import tensorflow as tf
@@ -18,7 +17,6 @@ from .line import Line
 from .bies import Bies
 from .grapheme_cluster import GraphemeCluster
 from .code_point import CodePoint
-from .chinese import Radicals
 
 class KerasBatchGenerator(object):
     """
