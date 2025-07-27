@@ -1,0 +1,3 @@
+from lstm_word_segmentation import text_helpers
+
+text_helpers.get_hkcancor_text(True)

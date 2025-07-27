@@ -6,7 +6,64 @@ from .helpers import is_ascii
 from icu import Char, Script, UCharCategory
 from . import constants
 from icu import UnicodeSet
+import xml.etree.ElementTree as ET
+from conllu import parse_incr
+import re
+import budoux
+import pycantonese
 
+def get_word_list(sent_el):
+    tag_text = sent_el.findtext("sent_tag") or ""
+    words = []
+    for line in tag_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        word, *_ = line.split("/", 1)
+        if word in ("A:", "B:", "A", "B", "\uece1"):
+            continue
+        if re.search(r"[a-zA-Z]", word):
+            continue
+        words.append(word)
+    return words
+
+
+def get_hkcancor_text(train=True):
+    out_str = ""
+    directory_path = Path.joinpath(Path(__file__).parent.parent.absolute(), "Data/hkcancor")
+    files = [item.name for item in directory_path.iterdir() if item.is_file()]
+    for file in files:
+        raw = Path.joinpath(Path(__file__).parent.parent.absolute(), f"Data/hkcancor/{file}").read_text(encoding="utf-8")
+        raw = f"<root>\n{raw}\n</root>"
+        root = ET.fromstring(raw)
+
+        lines = []
+        for sent in root.findall("sent"):
+            words = get_word_list(sent)
+            if train:
+                words = words[:int(0.8*len(words))]
+            else:
+                words = words[int(0.8*len(words)):]
+            if not words:
+                continue
+            # print("".join(words))
+            # input()
+            # parser = budoux.load_default_traditional_chinese_parser()
+            # print("|".join(parser.parse("".join(words))))
+            # print("|".join(words))
+            # print("|".join(pycantonese.segment("".join(words))))
+            # input()
+            lines.append("|".join(words))
+        out_str = out_str + "|" + "|".join(lines) + "| "
+    return out_str
+    
+def get_udcantonese_text():
+    path = Path.joinpath(Path(__file__).parent.parent.absolute(), "Data/yue_hk-ud-test.conllu")
+    out_str = ""
+    with open(path, "r", encoding="utf-8") as f:
+        for tokenlist in parse_incr(f):
+            out_str = out_str + "|" + "|".join([tok["form"] for tok in tokenlist]) + "| "
+    return out_str
 
 def remove_tags(line, st_tag, fn_tag):
     """

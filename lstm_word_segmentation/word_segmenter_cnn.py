@@ -1,18 +1,18 @@
 from pathlib import Path
 import numpy as np
-import json, os, time, io
+import os, time
 import hypertune
 from icu import Char
-from keras.models import Sequential
-from keras.layers import Dense, TimeDistributed, Embedding, Dropout, Input, Conv1D, BatchNormalization, ReLU, Maximum
+from keras.layers import Dense, TimeDistributed, Embedding, Dropout, Input, Conv1D, Maximum, BatchNormalization, ReLU, Bidirectional, LSTM
+from keras.initializers import Constant
 from tensorflow import keras
 import tensorflow as tf
 from keras.models import Model
 from keras.callbacks import EarlyStopping
 
 from . import constants
-from .helpers import sigmoid, save_training_plot, upload_to_gcs
-from .text_helpers import get_segmented_file_in_one_line, get_best_data_text, get_lines_of_text, get_hkcancor_text
+from .helpers import save_training_plot, upload_to_gcs
+from .text_helpers import get_best_data_text, get_lines_of_text, get_hkcancor_text
 from .accuracy import Accuracy
 from .line import Line
 from .bies import Bies
@@ -151,15 +151,14 @@ class WordSegmenterCNN:
                 cnt += 1
 
         # Loading the code points dictionary -- this will be used if self.embedding_type is Code Points
-        # If you want to group some of the code points into buckets, that code should go here to change
+        # If you want to group some of the code points into buckets, that code should go    here to change
         # self.codepoint_dic appropriately
-        if self.language == "Thai":
-            self.codepoint_dic = constants.THAI_CODE_POINT_DICTIONARY
-        if self.language == "Burmese":
-            self.codepoint_dic = constants.BURMESE_CODE_POINT_DICTIONARY
-        if self.language == "Cantonese":
-            self.codepoint_dic = constants.CANTON_CODE_POINT_DICTIONARY
-        self.codepoints_num = len(self.codepoint_dic) + 1
+        if self.embedding_type == "codepoints":
+            if self.language == "Thai":
+                self.codepoint_dic = constants.THAI_CODE_POINT_DICTIONARY
+            if self.language == "Burmese":
+                self.codepoint_dic = constants.BURMESE_CODE_POINT_DICTIONARY
+            self.codepoints_num = len(self.codepoint_dic) + 1
 
         # Constructing the letters dictionary -- this will be used if self.embedding_type is Generalized Vectors
         self.letters_dic = dict()
@@ -229,7 +228,7 @@ class WordSegmenterCNN:
                     y_chunk = y[pos : pos + LENGTH]
                     yield x_chunk, y_chunk
         elif self.language == "Cantonese":
-            LENGTH = 400
+            LENGTH = 100
             if end == 1:
                 text = get_hkcancor_text(train=True)
             else:
@@ -318,6 +317,50 @@ class WordSegmenterCNN:
         #     curr_est = np.exp(curr_est) / sum(np.exp(curr_est))
         #     est[i, :] = curr_est
         return probs.astype(dtype)
+    
+    def segment_arbitrary_line(self, input_line):
+        """
+        This function uses the LSTM model to segment an unsegmented line and compare it to ICU and deepcut.
+        Args:
+            input_line: the string that needs to be segmented. It is supposed to be unsegmented
+        """
+        line = Line(input_line, "unsegmented")
+        grapheme_clusters_in_line = len(line.char_brkpoints) - 1
+
+        # Using LSTM model to segment the input line
+        if self.embedding_type == "codepoints":
+            x_data = []
+            for i in range(len(line.unsegmented)):
+                x_data.append(CodePoint(line.unsegmented[i], self.codepoint_dic))
+        else:
+            x_data = []
+            for i in range(grapheme_clusters_in_line):
+                char_start = line.char_brkpoints[i]
+                char_finish = line.char_brkpoints[i + 1]
+                curr_char = line.unsegmented[char_start: char_finish]
+                x_data.append(GraphemeCluster(curr_char, self.graph_clust_dic, self.letters_dic))
+        y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
+
+        # Making a pretty version of the output of the LSTM, where bars show the boundaries of words
+        y_hat_pretty = ""
+        if self.embedding_type == "codepoints":
+            for i in range(len(line.unsegmented)):
+                if y_hat.str[i] in ['b', 's']:
+                    y_hat_pretty += "|"
+                y_hat_pretty += line.unsegmented[i]
+            y_hat_pretty += "|"
+        else:
+            y_hat_pretty = ""
+            for i in range(grapheme_clusters_in_line):
+                char_start = line.char_brkpoints[i]
+                char_finish = line.char_brkpoints[i + 1]
+                curr_char = line.unsegmented[char_start: char_finish]
+                if y_hat.str[i] in ['b', 's']:
+                    y_hat_pretty += "|"
+                y_hat_pretty += curr_char
+            y_hat_pretty += "|"
+
+        return y_hat_pretty
 
     def _get_trainable_data(self, input_line):
         """
@@ -356,7 +399,7 @@ class WordSegmenterCNN:
             for i in range(line_len):
                 char = c.unihan.lookup_char(line.unsegmented[i]).first()
                 if char is None:
-                    x_data.append(Radicals(1, 301))
+                    x_data.append(Radicals(0, 0))
                 else:
                     first_radical = char.kRSUnicode.split(" ")[0]
                     x_data.append(Radicals(line.unsegmented[i], int(first_radical.split('.')[0])))
@@ -465,7 +508,7 @@ class WordSegmenterCNN:
                     tf.TensorSpec(shape=(None,4), dtype=tf.int32)
                 )
             )
-            train_dataset = base.padded_batch(batch_size=128, padded_shapes=([None], [None,4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
+            train_dataset = base.padded_batch(batch_size=32, padded_shapes=([None], [None,4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
 
             valid_dataset = tf.data.Dataset.from_generator(
                 lambda: self.data_generator(80, 90),
@@ -473,7 +516,7 @@ class WordSegmenterCNN:
                     tf.TensorSpec(shape=(None,), dtype=tf.int32),
                     tf.TensorSpec(shape=(None,4), dtype=tf.int32)
                 )
-            ).padded_batch(batch_size=128, padded_shapes=([None], [None,4]), padding_values=(-1,0))
+            ).padded_batch(batch_size=32, padded_shapes=([None], [None,4]), padding_values=(-1,0))
 
         checkpoiont_dir = Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/checkpoints")
         checkpoiont_dir.mkdir(parents=True, exist_ok=True)
@@ -504,18 +547,31 @@ class WordSegmenterCNN:
         elif self.embedding_type == "codepoints":
             x = Embedding(input_dim=self.codepoints_num, output_dim=self.embedding_dim, input_length=self.n)(inp)
         elif self.embedding_type == "radicals":
-            x = tf.keras.layers.Lambda(
-                lambda t: tf.one_hot(tf.cast(t, 'int32'), depth=301)
-            )(inp)
+            mat = np.load("cantonese_emb.npy")
+            x = Embedding(input_dim=mat.shape[0], output_dim=mat.shape[1], 
+                          embeddings_initializer=Constant(mat), trainable=True)(inp)
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
-        y1 = Conv1D(filters=self.filters, kernel_size=3, padding="same", activation="relu")(x)
-        y2 = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same", activation="relu")(x)
-        x = Maximum()([y1, y2])
-        x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
+        # y1 = Conv1D(filters=self.filters, kernel_size=3, padding="same")(x)
+        # y1 = BatchNormalization()(y1)
+        # y1 = ReLU()(y1)
+        # y1 = Conv1D(filters=self.filters*2, kernel_size=3, padding="same")(x)
+        # y1 = BatchNormalization()(y1)
+        # y1 = ReLU()(y1)
+        # y2 = Conv1D(filters=self.filters, kernel_size=5, padding="same", dilation_rate=2)(x)
+        # y2 = BatchNormalization()(y2)
+        # y2 = ReLU()(y2)
+        # y2 = Conv1D(filters=self.filters*2, kernel_size=5, padding="same", dilation_rate=2)(x)
+        # y2 = BatchNormalization()(y2)
+        # y2 = ReLU()(y2)
+        # x = Maximum()([y1, y2])
+        # x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
+        # x = Dropout(self.dropout_rate)(x)
+        # out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
+        x = Bidirectional(LSTM(self.hunits, return_sequences=True), input_shape=(self.n, 1))(x)
         x = Dropout(self.dropout_rate)(x)
-        out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
+        out = TimeDistributed(Dense(self.output_dim, activation='softmax'))(x)
         model = Model(inp, out)
         opt = keras.optimizers.Adam(learning_rate=self.learning_rate)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
@@ -562,12 +618,13 @@ class WordSegmenterCNN:
                 x = np.array([[tok.graph_clust_id for tok in x_data]], dtype="float32")
             elif self.embedding_type == "codepoints":
                 x = np.array([[tok.codepoint_id for tok in x_data]], dtype="float32")
+            elif self.embedding_type == "radicals":
+                x = np.array([[tok.radical_id for tok in x_data]], dtype="int32")
             # y_hat = self._manual_predict(x_data)
             # input()
-            # y_pred = np.squeeze(self.model.predict(x, verbose=0), axis=0)
-            # print(y_pred.shape)
-            # input()
-            y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
+            y_pred = np.squeeze(self.model.predict(x, verbose=0), axis=0)
+            # y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
+            y_hat = Bies(input_bies=y_pred, input_type="mat")
             y_hat.normalize_bies()
             # Updating overall accuracy using the new line
             actual_y = Bies(input_bies=y_data, input_type="mat")
@@ -733,7 +790,7 @@ class WordSegmenterCNN:
         self.model = model
 
 
-def pick_cnn_model(model_name, embedding, train_data, eval_data):
+def pick_cnn_model(model_name, embedding_type):
     """
     Load a saved CNN-based word segmentation model and return a WordSegmenter instance.
     Args:
@@ -742,45 +799,21 @@ def pick_cnn_model(model_name, embedding, train_data, eval_data):
         train_data: Dataset name used for training (e.g. "BEST").
         eval_data: Dataset name for evaluation (should correspond to training dataset structure).
     """
-    # Determine language from model name
-    language = None
-    if "Thai" in model_name:
-        language = "Thai"
-    elif "Burmese" in model_name:
-        language = "Burmese"
-    else:
-        print("Warning: model name does not specify a supported language.")
-    
-    # Warn if model was trained on exclusive dataset
-    if "exclusive" in model_name:
-        print(f"Note: model {model_name} was trained on an exclusive dataset.")
-    
-    input_n = 200
-    input_t = 500000
-    
-    # Infer embedding and model dimensions from weights
-    # Weight 0: Embedding matrix of shape (vocab_size, embedding_dim)
-    # vocab_size = loaded_layer.weights[0].shape[0]    # number of input tokens (clusters/codepoints)
-    # embedding_dim = loaded_layer.weights[0].shape[1]  # embedding vector dimension
-    # Last Dense layer weights (just before softmax) have shape (hunits, output_dim)
-    output_dim = 4    # should be 4 for BIES tags
-    hunits = 23        # hidden units in the TimeDistributed Dense layer
-    
     # Create a WordSegmenter instance with these parameters
     word_segmenter = WordSegmenterCNN(
         input_name=model_name,
-        input_n=input_n,
-        input_t=input_t,
+        input_n=1,
+        input_t=1,
         input_clusters_num=350,       # for grapheme clusters this includes +1 for "unknown"
-        input_embedding_dim=200,
-        input_hunits=hunits,
+        input_embedding_dim=16,
+        input_hunits=1,
         input_dropout_rate=0.2,
-        input_output_dim=output_dim,
+        input_output_dim=4,
         input_epochs=1,                     # epochs value not critical for inference
-        input_training_data=train_data,
-        input_evaluation_data=eval_data,
-        input_language=language,
-        input_embedding_type=embedding,
+        input_training_data="BEST",
+        input_evaluation_data="BEST",
+        input_language="Cantonese",
+        input_embedding_type=embedding_type,
         filters=32,
         layers=2,
         learning_rate=0.001
