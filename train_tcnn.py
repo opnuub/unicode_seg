@@ -18,29 +18,36 @@ bayes_optimization.perform_bayesian_optimization()
 #                                  train_data="BEST", eval_data="BEST")
 # word_segmenter.benchmark_inference("คิดว่าอักษรไทยมีพื้นฐานมาจากอักษรเขมรเก่าซึ่งมีอายุตั้งแต่คริสตศักราช 611 จารึกภาษาไทยที่เก่าแก่ที่สุดปรากฏเมื่อประมาณ พ.ศ. 1292 ตามประเพณีอักษรไทยถูกสร้างขึ้นโดยพ่อขุนรามคำแหงมหาราช"*10000, 1)
 
-model_name = "Cantonese_codepoint_2_64"
-# word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=200, input_t=10000, input_clusters_num=350,
-#                                input_embedding_dim=128, input_hunits=512, input_dropout_rate=0.1, input_output_dim=4,
-#                                input_epochs=10, input_training_data="BEST",
-#                                input_evaluation_data="BEST", input_language="Cantonese",
-#                                input_embedding_type="radicals", filters=128, layers=2, learning_rate=0.003)
-# word_segmenter.train_model()
-# word_segmenter.save_cnn_model()
-import numpy as np
-from lstm_word_segmentation.bies import Bies
-from lstm_word_segmentation.accuracy import Accuracy
-word_segmenter = pick_cnn_model(model_name, embedding_type="radicals")
-accuracy = Accuracy()
-x_data, y_data = word_segmenter._get_trainable_data("|你|今日|去|做乜|呀|，|食飯|咗|冇|，|要唔要|一齊|去|食|烤串|")
-x = np.array([[tok.radical_id for tok in x_data]], dtype="int32")
-y_pred = np.squeeze(word_segmenter.model.predict(x, verbose=0), axis=0)
-y_hat = Bies(input_bies=y_pred, input_type="mat")
-y_hat.normalize_bies()
-actual_y = Bies(input_bies=y_data, input_type="mat")
-accuracy.update(true_bies=actual_y.str, est_bies=y_hat.str)
-print(actual_y.str)
-print(y_hat.str)
-print(accuracy.get_bies_accuracy())
+model_name = "Cantonese_codepoints_2_16"
+word_segmenter = WordSegmenterCNN(input_name=model_name, input_n=200, input_t=10000, input_clusters_num=350,
+                               input_embedding_dim=128, input_hunits=32, input_dropout_rate=0.1, input_output_dim=4,
+                               input_epochs=40, input_training_data="BEST",
+                               input_evaluation_data="BEST", input_language="Cantonese",
+                               input_embedding_type="radicals", filters=16, layers=2, learning_rate=0.003)
+word_segmenter.train_model()
+word_segmenter.save_cnn_model()
+
+
+# import numpy as np
+# from lstm_word_segmentation.bies import Bies
+# from lstm_word_segmentation.accuracy import Accuracy
+# word_segmenter = pick_cnn_model(model_name, embedding_type="radicals")
+# accuracy = Accuracy()
+# x_data, y_data = word_segmenter._get_trainable_data("你|今日|去|做乜|呀|，|食飯|咗|冇|，|要唔要|一齊|去|食|烤串|")
+# print(y_data)
+# x = np.array([[tok.radical_id for tok in x_data]], dtype="int32")
+# y_pred = np.squeeze(word_segmenter.model.predict(x, verbose=0), axis=0)
+# y_pred_bin = list(int(i) for i in (y_pred > 0.5).astype("int32"))
+# print(y_pred_bin)
+# y_hat = Bies(input_bies=y_pred, input_type="mat")
+# y_hat.normalize_bies()
+# actual_y = Bies(input_bies=y_data, input_type="mat")
+# accuracy.update(true_bies=actual_y.str, est_bies=y_hat.str)
+# print(actual_y.str)
+# print(y_hat.str)
+# print(accuracy.get_bies_accuracy())
+
+
 #word_segmenter.test_model_line_by_line(verbose=True)
 
 

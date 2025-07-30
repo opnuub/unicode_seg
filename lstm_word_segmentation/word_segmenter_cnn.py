@@ -228,7 +228,7 @@ class WordSegmenterCNN:
                     y_chunk = y[pos : pos + LENGTH]
                     yield x_chunk, y_chunk
         elif self.language == "Cantonese":
-            LENGTH = 100
+            LENGTH = 20
             if end == 1:
                 text = get_hkcancor_text(train=True)
             else:
@@ -392,8 +392,7 @@ class WordSegmenterCNN:
             c = Cihai()
             if not c.unihan.is_bootstrapped:
                 c.unihan.bootstrap()
-            true_bies = line.get_bies_codepoints("icu")
-            y_data = true_bies.mat
+            y_data = line.get_bies_codepoints("man")
             line_len = len(line.unsegmented)
             x_data = []
             for i in range(line_len):
@@ -505,18 +504,18 @@ class WordSegmenterCNN:
                 lambda: self.data_generator(1, 1),
                 output_signature=(
                     tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
+                    tf.TensorSpec(shape=(None,), dtype=tf.int32)
                 )
             )
-            train_dataset = base.padded_batch(batch_size=32, padded_shapes=([None], [None,4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
+            train_dataset = base.padded_batch(batch_size=1024, padded_shapes=([None], [None,]), padding_values=(0,0)).prefetch(tf.data.AUTOTUNE)
 
             valid_dataset = tf.data.Dataset.from_generator(
                 lambda: self.data_generator(80, 90),
                 output_signature=(
                     tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
+                    tf.TensorSpec(shape=(None,), dtype=tf.int32)
                 )
-            ).padded_batch(batch_size=32, padded_shapes=([None], [None,4]), padding_values=(-1,0))
+            ).padded_batch(batch_size=1024, padded_shapes=([None], [None,]), padding_values=(0,0))
 
         checkpoiont_dir = Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/checkpoints")
         checkpoiont_dir.mkdir(parents=True, exist_ok=True)
@@ -530,7 +529,7 @@ class WordSegmenterCNN:
 
         early_stop = EarlyStopping(
             monitor="val_loss",      # metric to watch
-            patience=5,             # “no-improve” epochs before stopping
+            patience=3,             # “no-improve” epochs before stopping
             restore_best_weights=True,
             verbose=1                # prints a message when stopping
         )
@@ -553,34 +552,24 @@ class WordSegmenterCNN:
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
-        # y1 = Conv1D(filters=self.filters, kernel_size=3, padding="same")(x)
-        # y1 = BatchNormalization()(y1)
-        # y1 = ReLU()(y1)
-        # y1 = Conv1D(filters=self.filters*2, kernel_size=3, padding="same")(x)
-        # y1 = BatchNormalization()(y1)
-        # y1 = ReLU()(y1)
-        # y2 = Conv1D(filters=self.filters, kernel_size=5, padding="same", dilation_rate=2)(x)
-        # y2 = BatchNormalization()(y2)
-        # y2 = ReLU()(y2)
-        # y2 = Conv1D(filters=self.filters*2, kernel_size=5, padding="same", dilation_rate=2)(x)
-        # y2 = BatchNormalization()(y2)
-        # y2 = ReLU()(y2)
-        # x = Maximum()([y1, y2])
-        # x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
-        # x = Dropout(self.dropout_rate)(x)
-        # out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
-        x = Bidirectional(LSTM(self.hunits, return_sequences=True), input_shape=(self.n, 1))(x)
+        y1 = Conv1D(filters=self.filters, kernel_size=3, padding="same")(x)
+        y1 = BatchNormalization()(y1)
+        y1 = ReLU()(y1)
+        x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(y1)
         x = Dropout(self.dropout_rate)(x)
-        out = TimeDistributed(Dense(self.output_dim, activation='softmax'))(x)
+        out = Conv1D(filters=1, kernel_size=1, activation="sigmoid")(x) 
+        # x = Bidirectional(LSTM(self.hunits, return_sequences=True), input_shape=(self.n, 1))(x)
+        # x = Dropout(self.dropout_rate)(x)
+        # out = TimeDistributed(Dense(self.output_dim, activation='softmax'))(x)
         model = Model(inp, out)
         opt = keras.optimizers.Adam(learning_rate=self.learning_rate)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
-        model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
+        model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
         if self.language == "Thai":
             history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop, checkpoint_cb])
         elif self.language == "Cantonese":
-            history = model.fit(train_dataset, epochs=self.epochs, validation_data=valid_dataset, callbacks=[checkpoint_cb])
+            history = model.fit(train_dataset, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop, checkpoint_cb])
         # Optional hyperparameter tuning
         hp_metric = history.history['val_accuracy'][-1]
         param_count = model.count_params()

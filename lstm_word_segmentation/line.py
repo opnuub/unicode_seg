@@ -160,26 +160,16 @@ class Line:
         else:
             print("Warning: No segmentation exist for the given type")
 
-        bies_mat = np.zeros(shape=[len(self.unsegmented), 4])
-        word_ind = 0
-        for i in range(len(self.unsegmented)):
-            word_st = word_brkpoints[word_ind]
-            word_fn = word_brkpoints[word_ind + 1]
-            if i == word_st and i+1 < word_fn:
-                bies_mat[i, 0] = 1
-                continue
-            if i != word_st and i+1 != word_fn:
-                bies_mat[i, 1] = 1
-                continue
-            if i != word_st and i+1 == word_fn:
-                bies_mat[i, 2] = 1
-                word_ind += 1
-                continue
-            if i == word_st and i+1 == word_fn:
-                bies_mat[i, 3] = 1
-                word_ind += 1
-                continue
-        return Bies(input_bies=bies_mat, input_type="mat")
+        break_vec = np.zeros(len(self.unsegmented))
+        for i in word_brkpoints:
+            break_vec[i-1] = 1
+        # word_ind = 0
+        # for i in range(len(self.unsegmented)):
+        #     word_st = word_brkpoints[word_ind]
+        #     if i == word_st:
+        #         break_vec[i] = 1
+        #         word_ind += 1
+        return break_vec
 
     def get_grapheme_clusters(self):
         """

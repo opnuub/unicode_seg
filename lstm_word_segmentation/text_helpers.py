@@ -55,7 +55,7 @@ def get_hkcancor_text(train=True):
             # input()
             lines.append("|".join(words))
         out_str = out_str + "|" + "|".join(lines) + "| "
-    return out_str
+    return out_str[1:]
     
 def get_udcantonese_text():
     path = Path.joinpath(Path(__file__).parent.parent.absolute(), "Data/yue_hk-ud-test.conllu")
