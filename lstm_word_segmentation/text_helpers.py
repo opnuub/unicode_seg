@@ -256,8 +256,17 @@ def get_best_data_text(starting_text, ending_text, pseudo, exclusive):
         point is excluded from texts
     """
     out_str = ""
-    category = ["news", "encyclopedia", "article", "novel"]
     for text_num in range(starting_text, ending_text):
+        if text_num == 182:
+            continue
+        elif text_num > 108:
+            category = ["article"]
+        elif text_num > 107:
+            category = ["encyclopedia", "article"]
+        elif text_num > 96:
+            category = ["encyclopedia", "article", "novel"]
+        else:
+            category = ["news", "encyclopedia", "article", "novel"]
         for cat in category:
             text_num_str = "{}".format(text_num).zfill(5)
             if exclusive:

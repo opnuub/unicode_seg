@@ -1,6 +1,6 @@
 from pathlib import Path
 import numpy as np
-import os, time
+import os, json
 import hypertune
 from icu import Char
 from keras.layers import Dense, TimeDistributed, Embedding, Dropout, Input, Conv1D, Maximum
@@ -308,7 +308,15 @@ class WordSegmenterCNN:
                     tf.TensorSpec(shape=(None,4), dtype=tf.int32)
                 )
             )
-            train_dataset = base.repeat().shuffle(50000, reshuffle_each_iteration=True).padded_batch(batch_size=1024, padded_shapes=([None], [None,4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
+            base = base.concatenate(tf.data.Dataset.from_generator(
+                lambda: self.data_generator(97, 199),
+                output_signature=(
+                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
+                )
+            ))
+            element_count = int(base.reduce(tf.constant(0, dtype=tf.int64), lambda count, _: count + 1))
+            train_dataset = base.cache().shuffle(element_count, reshuffle_each_iteration=True).padded_batch(batch_size=1024, padded_shapes=([None], [None, 4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
         
             valid_dataset = tf.data.Dataset.from_generator(
                 lambda: self.data_generator(80, 90),
@@ -336,11 +344,7 @@ class WordSegmenterCNN:
             x = TimeDistributed(Dense(self.embedding_dim, activation=None, use_bias=False,
                                             kernel_initializer='uniform'))(inp)
         elif self.embedding_type == "codepoints":
-            x = Embedding(input_dim=self.codepoints_num, output_dim=self.embedding_dim, input_length=self.n)(inp)
-        elif self.embedding_type == "radicals":
-            x = tf.keras.layers.Lambda(
-                lambda t: tf.one_hot(tf.cast(t, 'int32'), depth=301)
-            )(inp)
+            x = Embedding(input_dim=self.codepoints_num, output_dim=self.embedding_dim, input_length=(None,))(inp)
         else:
             print("Warning: the embedding_type is not implemented")
         x = Dropout(self.dropout_rate)(x)
@@ -356,7 +360,7 @@ class WordSegmenterCNN:
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
         if self.language == "Thai":
-            history = model.fit(train_dataset, steps_per_epoch=700, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop])
+            history = model.fit(train_dataset, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop])
         # Optional hyperparameter tuning
         hp_metric = history.history['val_accuracy'][-1]
         hpt = hypertune.HyperTune()
@@ -496,6 +500,34 @@ class WordSegmenterCNN:
 
         model_paths = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
         self.model.save(model_paths)
+
+        # json_file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights.json")
+        # with open(str(json_file), 'w') as wfile:
+        #     output = dict()
+        #     output["model"] = self.name
+        #     if "grapheme_clusters" in self.embedding_type:
+        #         output["dic"] = self.graph_clust_dic
+        #     elif "codepoints" in self.embedding_type:
+        #         if self.language == "Thai":
+        #             output["dic"] = constants.THAI_CODE_POINT_DICTIONARY
+        #         if self.language == "Burmese":
+        #             output["dic"] = constants.BURMESE_CODE_POINT_DICTIONARY
+        #     for i in range(len(self.model.weights)):
+        #         dic_model = dict()
+        #         dic_model["v"] = 1
+        #         mat = self.model.weights[i].numpy()
+        #         dim0 = mat.shape[0]
+        #         dim1 = 1
+        #         if len(mat.shape) == 1:
+        #             dic_model["dim"] = [dim0]
+        #         else:
+        #             dim1 = mat.shape[1]
+        #             dic_model["dim"] = [dim0, dim1]
+        #         serial_mat = np.reshape(mat, newshape=[dim0 * dim1])
+        #         serial_mat = serial_mat.tolist()
+        #         dic_model["data"] = serial_mat
+        #         output["mat{}".format(i+1)] = dic_model
+        #     json.dump(output, wfile)
 
         if 'AIP_MODEL_DIR' in os.environ:
             upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
