@@ -11,13 +11,12 @@ from keras.callbacks import EarlyStopping
 
 from . import constants
 from .helpers import sigmoid, save_training_plot, upload_to_gcs
-from .text_helpers import get_best_data_text, get_lines_of_text
+from .text_helpers import get_best_data_text, get_lines_of_text, get_segmented_file_in_one_line
 from .accuracy import Accuracy
 from .line import Line
 from .bies import Bies
 from .grapheme_cluster import GraphemeCluster
 from .code_point import CodePoint
-
 
 class WordSegmenterCNN:
     """
@@ -154,6 +153,21 @@ class WordSegmenterCNN:
                     x_chunk = x[pos : pos + LENGTH]
                     y_chunk = y[pos : pos + LENGTH]
                     yield x_chunk, y_chunk
+        else:
+            if start == 1:
+                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train.txt')
+            else:
+                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid.txt')
+            text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+            x_data, y_data = self._get_trainable_data(text)
+            if self.embedding_type == 'grapheme_clusters_tf':
+                x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+            elif self.embedding_type == 'codepoints':
+                x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+            for pos in range(0, len(x)-LENGTH+1, LENGTH):
+                x_chunk = x[pos : pos + LENGTH]
+                y_chunk = y[pos : pos + LENGTH]
+                yield x_chunk, y_chunk
 
     def _conv1d_same(self, x, kernel, bias, dilation=1):
         L, Cin = x.shape
@@ -198,14 +212,13 @@ class WordSegmenterCNN:
 
         maximum = np.maximum(y1, y2)
 
-        w3, b3 = self.model.weights[5].numpy().astype(dtype), self.model.weights[6].numpy().astype(dtype)
-        w3 = np.squeeze(w3, axis=0)
+        # w3, b3 = self.model.weights[5].numpy().astype(dtype), self.model.weights[6].numpy().astype(dtype)
+        # w3 = np.squeeze(w3, axis=0)
 
-        hunits_out = np.matmul(maximum, w3) + b3 # Feature dense layer (hunits)
-        hunits_out = np.maximum(0, hunits_out) # ReLU
-
-        w4, b4 = self.model.weights[7].numpy().astype(dtype), self.model.weights[8].numpy().astype(dtype)
-        logits = np.matmul(hunits_out, np.squeeze(w4, 0)) + b4
+        # hunits_out = np.matmul(maximum, w3) + b3 # Feature dense layer (hunits)
+        # hunits_out = np.maximum(0, hunits_out) # ReLU
+        w4, b4 = self.model.weights[5].numpy().astype(dtype), self.model.weights[6].numpy().astype(dtype)
+        logits = np.matmul(maximum, np.squeeze(w4, 0)) + b4
         
         logits -= logits.max(axis=-1, keepdims=True)
         probs = np.exp(logits)
@@ -325,6 +338,24 @@ class WordSegmenterCNN:
                     tf.TensorSpec(shape=(None,4), dtype=tf.int32)
                 )
             ).padded_batch(batch_size=1024, padded_shapes=([None], [None,4]), padding_values=(-1,0))
+        else:
+            base = tf.data.Dataset.from_generator(
+                lambda: self.data_generator(1, 1),
+                output_signature=(
+                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
+                )
+            )
+            element_count = int(base.reduce(tf.constant(0, dtype=tf.int64), lambda count, _: count + 1))
+            train_dataset = base.cache().shuffle(element_count, reshuffle_each_iteration=True).padded_batch(batch_size=128, padded_shapes=([None], [None, 4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
+        
+            valid_dataset = tf.data.Dataset.from_generator(
+                lambda: self.data_generator(0, 0),
+                output_signature=(
+                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
+                )
+            ).padded_batch(batch_size=128, padded_shapes=([None], [None,4]), padding_values=(-1,0))
 
         early_stop = EarlyStopping(
             monitor="val_loss",
@@ -351,24 +382,23 @@ class WordSegmenterCNN:
         y1 = Conv1D(filters=self.filters, kernel_size=3, padding="same", activation="relu")(x)
         y2 = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same", activation="relu")(x)
         x = Maximum()([y1, y2])
-        x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
-        x = Dropout(self.dropout_rate)(x)
+        # x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
+        # x = Dropout(self.dropout_rate)(x)
         out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
         model = Model(inp, out)
         opt = keras.optimizers.Adam(learning_rate=self.learning_rate)
         # opt = keras.optimizers.SGD(learning_rate=0.4, momentum=0.9)
         model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'], jit_compile=False)
         # Fitting the model
-        if self.language == "Thai":
-            history = model.fit(train_dataset, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop])
+        history = model.fit(train_dataset, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop])
         # Optional hyperparameter tuning
-        hp_metric = history.history['val_accuracy'][-1]
-        hpt = hypertune.HyperTune()
-        hpt.report_hyperparameter_tuning_metric(
-            hyperparameter_metric_tag='accuracy',
-            metric_value=hp_metric,
-            global_step=self.epochs
-        )
+        # hp_metric = history.history['val_accuracy'][-1]
+        # hpt = hypertune.HyperTune()
+        # hpt.report_hyperparameter_tuning_metric(
+        #     hyperparameter_metric_tag='accuracy',
+        #     metric_value=hp_metric,
+        #     global_step=self.epochs
+        # )
         save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         self.model = model
 
@@ -501,33 +531,29 @@ class WordSegmenterCNN:
         model_paths = (Path.joinpath(Path(__file__).parent.parent.absolute(), f"Models/{self.name}/model.keras"))
         self.model.save(model_paths)
 
-        # json_file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights.json")
-        # with open(str(json_file), 'w') as wfile:
-        #     output = dict()
-        #     output["model"] = self.name
-        #     if "grapheme_clusters" in self.embedding_type:
-        #         output["dic"] = self.graph_clust_dic
-        #     elif "codepoints" in self.embedding_type:
-        #         if self.language == "Thai":
-        #             output["dic"] = constants.THAI_CODE_POINT_DICTIONARY
-        #         if self.language == "Burmese":
-        #             output["dic"] = constants.BURMESE_CODE_POINT_DICTIONARY
-        #     for i in range(len(self.model.weights)):
-        #         dic_model = dict()
-        #         dic_model["v"] = 1
-        #         mat = self.model.weights[i].numpy()
-        #         dim0 = mat.shape[0]
-        #         dim1 = 1
-        #         if len(mat.shape) == 1:
-        #             dic_model["dim"] = [dim0]
-        #         else:
-        #             dim1 = mat.shape[1]
-        #             dic_model["dim"] = [dim0, dim1]
-        #         serial_mat = np.reshape(mat, newshape=[dim0 * dim1])
-        #         serial_mat = serial_mat.tolist()
-        #         dic_model["data"] = serial_mat
-        #         output["mat{}".format(i+1)] = dic_model
-        #     json.dump(output, wfile)
+        json_file = Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name + "/weights.json")
+        with open(str(json_file), 'w') as wfile:
+            output = dict()
+            output["model"] = self.name
+            if "grapheme_clusters" in self.embedding_type:
+                output["dic"] = self.graph_clust_dic
+            elif "codepoints" in self.embedding_type:
+                if self.language == "Thai":
+                    output["dic"] = constants.THAI_CODE_POINT_DICTIONARY
+                if self.language == "Burmese":
+                    output["dic"] = constants.BURMESE_CODE_POINT_DICTIONARY
+            for i in range(len(self.model.weights)):
+                dic_model = dict()
+                dic_model["v"] = 1
+                mat = self.model.weights[i].numpy()
+                if i==5:
+                    dic_model["dim"] = list(mat.shape)[1:]
+                else:
+                    dic_model["dim"] = list(mat.shape)
+                data = mat.ravel().tolist()
+                dic_model["data"] = data
+                output["mat{}".format(i+1)] = dic_model
+            json.dump(output, wfile)
 
         if 'AIP_MODEL_DIR' in os.environ:
             upload_to_gcs(model_path, os.environ['AIP_MODEL_DIR'])
