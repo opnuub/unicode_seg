@@ -139,35 +139,43 @@ class WordSegmenterCNN:
         else:
             print("Warning: the generalized_vectros embedding type is not supported for this language")
 
-    def data_generator(self, start, end):
+    def data_generator(self, valid=False):
         LENGTH = 200
-        if self.language == "Thai":
-            for i in range(start, end):
-                text = get_best_data_text(i, i+1, False, False)
-                x_data, y_data = self._get_trainable_data(text)
-                if self.embedding_type == 'grapheme_clusters_tf':
-                    x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-                elif self.embedding_type == 'codepoints':
-                    x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-                for pos in range(0, len(x)-LENGTH+1, LENGTH):
-                    x_chunk = x[pos : pos + LENGTH]
-                    y_chunk = y[pos : pos + LENGTH]
-                    yield x_chunk, y_chunk
-        else:
-            if start == 1:
-                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train.txt')
-            else:
+        if valid:
+            if self.training_data == "BEST":
+                text = get_best_data_text(80, 90, pseudo=False, exclusive=False)
+            elif self.training_data == "exclusive BEST":
+                text = get_best_data_text(80, 90, pseudo=False, exclusive=True)
+            elif self.training_data == "pseudo BEST":
+                text = get_best_data_text(80, 90, pseudo=True, exclusive=False)
+            elif self.training_data == "my":
                 file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid.txt')
-            text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
-            x_data, y_data = self._get_trainable_data(text)
-            if self.embedding_type == 'grapheme_clusters_tf':
-                x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-            elif self.embedding_type == 'codepoints':
-                x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-            for pos in range(0, len(x)-LENGTH+1, LENGTH):
-                x_chunk = x[pos : pos + LENGTH]
-                y_chunk = y[pos : pos + LENGTH]
-                yield x_chunk, y_chunk
+                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+            elif self.training_data == "exclusive my":
+                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid_exclusive.txt')
+                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+        else:
+            if self.training_data == "BEST":
+                text = get_best_data_text(1, 80, pseudo=False, exclusive=False)
+            elif self.training_data == "exclusive BEST":
+                text = get_best_data_text(1, 80, pseudo=False, exclusive=True)
+            elif self.training_data == "pseudo BEST":
+                text = get_best_data_text(1, 80, pseudo=True, exclusive=False)
+            elif self.training_data == "my":
+                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train.txt')
+                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+            elif self.training_data == "exclusive my":
+                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train_exclusive.txt')
+                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+        x_data, y_data = self._get_trainable_data(text)
+        if self.embedding_type == 'grapheme_clusters_tf':
+            x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+        elif self.embedding_type == 'codepoints':
+            x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+        for pos in range(0, len(x)-LENGTH+1, LENGTH):
+            x_chunk = x[pos : pos + LENGTH]
+            y_chunk = y[pos : pos + LENGTH]
+            yield x_chunk, y_chunk
 
     def _conv1d_same(self, x, kernel, bias, dilation=1):
         L, Cin = x.shape
@@ -212,11 +220,6 @@ class WordSegmenterCNN:
 
         maximum = np.maximum(y1, y2)
 
-        # w3, b3 = self.model.weights[5].numpy().astype(dtype), self.model.weights[6].numpy().astype(dtype)
-        # w3 = np.squeeze(w3, axis=0)
-
-        # hunits_out = np.matmul(maximum, w3) + b3 # Feature dense layer (hunits)
-        # hunits_out = np.maximum(0, hunits_out) # ReLU
         w4, b4 = self.model.weights[5].numpy().astype(dtype), self.model.weights[6].numpy().astype(dtype)
         logits = np.matmul(maximum, np.squeeze(w4, 0)) + b4
         
@@ -313,49 +316,23 @@ class WordSegmenterCNN:
         in reading files, if `pseudo` is True then we use icu segmented text instead of manually segmented texts to
         train the model.
         """
-        if self.language == "Thai":
-            base = tf.data.Dataset.from_generator(
-                lambda: self.data_generator(1, 80),
-                output_signature=(
-                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
-                )
+        base = tf.data.Dataset.from_generator(
+            lambda: self.data_generator(valid=False),
+            output_signature=(
+                tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                tf.TensorSpec(shape=(None,4), dtype=tf.int32)
             )
-            base = base.concatenate(tf.data.Dataset.from_generator(
-                lambda: self.data_generator(97, 199),
-                output_signature=(
-                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
-                )
-            ))
-            element_count = int(base.reduce(tf.constant(0, dtype=tf.int64), lambda count, _: count + 1))
-            train_dataset = base.cache().shuffle(element_count, reshuffle_each_iteration=True).padded_batch(batch_size=1024, padded_shapes=([None], [None, 4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
-        
-            valid_dataset = tf.data.Dataset.from_generator(
-                lambda: self.data_generator(80, 90),
-                output_signature=(
-                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
-                )
-            ).padded_batch(batch_size=1024, padded_shapes=([None], [None,4]), padding_values=(-1,0))
-        else:
-            base = tf.data.Dataset.from_generator(
-                lambda: self.data_generator(1, 1),
-                output_signature=(
-                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
-                )
+        )
+        element_count = int(base.reduce(tf.constant(0, dtype=tf.int64), lambda count, _: count + 1))
+        train_dataset = base.cache().shuffle(element_count, reshuffle_each_iteration=True).padded_batch(batch_size=1024, padded_shapes=([None], [None, 4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
+    
+        valid_dataset = tf.data.Dataset.from_generator(
+            lambda: self.data_generator(valid=True),
+            output_signature=(
+                tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                tf.TensorSpec(shape=(None,4), dtype=tf.int32)
             )
-            element_count = int(base.reduce(tf.constant(0, dtype=tf.int64), lambda count, _: count + 1))
-            train_dataset = base.cache().shuffle(element_count, reshuffle_each_iteration=True).padded_batch(batch_size=128, padded_shapes=([None], [None, 4]), padding_values=(-1,0)).prefetch(tf.data.AUTOTUNE)
-        
-            valid_dataset = tf.data.Dataset.from_generator(
-                lambda: self.data_generator(0, 0),
-                output_signature=(
-                    tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                    tf.TensorSpec(shape=(None,4), dtype=tf.int32)
-                )
-            ).padded_batch(batch_size=128, padded_shapes=([None], [None,4]), padding_values=(-1,0))
+        ).padded_batch(batch_size=1024, padded_shapes=([None], [None,4]), padding_values=(-1,0))
 
         early_stop = EarlyStopping(
             monitor="val_loss",
@@ -382,8 +359,6 @@ class WordSegmenterCNN:
         y1 = Conv1D(filters=self.filters, kernel_size=3, padding="same", activation="relu")(x)
         y2 = Conv1D(filters=self.filters, kernel_size=5, dilation_rate=2, padding="same", activation="relu")(x)
         x = Maximum()([y1, y2])
-        # x = Conv1D(filters=self.hunits, kernel_size=1, activation="relu")(x)
-        # x = Dropout(self.dropout_rate)(x)
         out = Conv1D(filters=self.output_dim, kernel_size=1, activation="softmax")(x) 
         model = Model(inp, out)
         opt = keras.optimizers.Adam(learning_rate=self.learning_rate)
@@ -392,13 +367,13 @@ class WordSegmenterCNN:
         # Fitting the model
         history = model.fit(train_dataset, epochs=self.epochs, validation_data=valid_dataset, callbacks=[early_stop])
         # Optional hyperparameter tuning
-        # hp_metric = history.history['val_accuracy'][-1]
-        # hpt = hypertune.HyperTune()
-        # hpt.report_hyperparameter_tuning_metric(
-        #     hyperparameter_metric_tag='accuracy',
-        #     metric_value=hp_metric,
-        #     global_step=self.epochs
-        # )
+        hp_metric = history.history['val_accuracy'][-1]
+        hpt = hypertune.HyperTune()
+        hpt.report_hyperparameter_tuning_metric(
+            hyperparameter_metric_tag='accuracy',
+            metric_value=hp_metric,
+            global_step=self.epochs
+        )
         save_training_plot(history, Path.joinpath(Path(__file__).parent.parent.absolute(), "Models/" + self.name))
         self.model = model
 

@@ -13,4 +13,4 @@ COPY . /
 RUN python3 -m pip install --upgrade pip && \
     pip install -r requirements.txt
 
-ENTRYPOINT ["python3", "train_cnn.py"]
+ENTRYPOINT ["python3", "train.py"]
