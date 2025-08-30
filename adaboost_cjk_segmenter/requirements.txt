@@ -1,0 +1,13 @@
+appdirs==1.4.4
+cihai==0.35.0
+greenlet==3.2.4
+mypy==1.17.1
+mypy_extensions==1.1.0
+pathspec==0.12.1
+PyYAML==6.0.2
+SQLAlchemy==2.0.43
+tomli==2.2.1
+typing_extensions==4.15.0
+unicodecsv==0.14.1
+unihan-etl==0.37.0
+zhon==2.1.1
