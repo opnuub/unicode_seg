@@ -141,41 +141,53 @@ class WordSegmenterCNN:
 
     def data_generator(self, valid=False):
         LENGTH = 200
-        if valid:
+        if self.training_data in ["BEST", "exclusive BEST", "pseudo BEST"]:
+            if valid:
+                start, end = 80, 90
+            else:
+                start, end = 1, 80
+                
             if self.training_data == "BEST":
-                text = get_best_data_text(80, 90, pseudo=False, exclusive=False)
+                pseudo, exclusive = False, False
             elif self.training_data == "exclusive BEST":
-                text = get_best_data_text(80, 90, pseudo=False, exclusive=True)
-            elif self.training_data == "pseudo BEST":
-                text = get_best_data_text(80, 90, pseudo=True, exclusive=False)
-            elif self.training_data == "my":
-                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid.txt')
-                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
-            elif self.training_data == "exclusive my":
-                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid_exclusive.txt')
-                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+                pseudo, exclusive = False, True
+            else:
+                pseudo, exclusive = True, False
+            for i in range(start, end):
+                text = get_best_data_text(i, i+1, pseudo=pseudo, exclusive=exclusive)
+                x_data, y_data = self._get_trainable_data(text)
+                if self.embedding_type == 'grapheme_clusters_tf':
+                    x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+                elif self.embedding_type == 'codepoints':
+                    x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+                for pos in range(0, len(x)-LENGTH+1, LENGTH):
+                    x_chunk = x[pos : pos + LENGTH]
+                    y_chunk = y[pos : pos + LENGTH]
+                    yield x_chunk, y_chunk
         else:
-            if self.training_data == "BEST":
-                text = get_best_data_text(1, 80, pseudo=False, exclusive=False)
-            elif self.training_data == "exclusive BEST":
-                text = get_best_data_text(1, 80, pseudo=False, exclusive=True)
-            elif self.training_data == "pseudo BEST":
-                text = get_best_data_text(1, 80, pseudo=True, exclusive=False)
-            elif self.training_data == "my":
-                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train.txt')
-                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
-            elif self.training_data == "exclusive my":
-                file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train_exclusive.txt')
-                text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
-        x_data, y_data = self._get_trainable_data(text)
-        if self.embedding_type == 'grapheme_clusters_tf':
-            x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-        elif self.embedding_type == 'codepoints':
-            x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
-        for pos in range(0, len(x)-LENGTH+1, LENGTH):
-            x_chunk = x[pos : pos + LENGTH]
-            y_chunk = y[pos : pos + LENGTH]
-            yield x_chunk, y_chunk
+            if valid:
+                if self.training_data == "my":
+                    file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid.txt')
+                    text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+                elif self.training_data == "exclusive my":
+                    file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_valid_exclusive.txt')
+                    text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+            else:
+                if self.training_data == "my":
+                    file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train.txt')
+                    text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+                elif self.training_data == "exclusive my":
+                    file = Path.joinpath(Path(__file__).parent.parent.absolute(), 'Data/my_train_exclusive.txt')
+                    text = get_segmented_file_in_one_line(file, input_type="icu_segmented", output_type="icu_segmented")
+            x_data, y_data = self._get_trainable_data(text)
+            if self.embedding_type == 'grapheme_clusters_tf':
+                x, y = np.array([tok.graph_clust_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+            elif self.embedding_type == 'codepoints':
+                x, y = np.array([tok.codepoint_id for tok in x_data], dtype=np.int32), np.array(y_data, dtype=np.int32)
+            for pos in range(0, len(x)-LENGTH+1, LENGTH):
+                x_chunk = x[pos : pos + LENGTH]
+                y_chunk = y[pos : pos + LENGTH]
+                yield x_chunk, y_chunk
 
     def _conv1d_same(self, x, kernel, bias, dilation=1):
         L, Cin = x.shape
@@ -390,7 +402,7 @@ class WordSegmenterCNN:
         if len(lines) < line_limit:
             print("Warning: not enough lines in the test file")
         accuracy = Accuracy()
-        for line in lines[:line_limit]:
+        for line in lines:
             x_data, y_data = self._get_trainable_data(line.man_segmented)
             y_hat = Bies(input_bies=self._manual_predict(x_data), input_type="mat")
             y_hat.normalize_bies()
