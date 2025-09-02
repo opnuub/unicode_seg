@@ -256,8 +256,8 @@ def get_best_data_text(starting_text, ending_text, pseudo, exclusive):
         point is excluded from texts
     """
     out_str = ""
+    category = ["news", "encyclopedia", "article", "novel"]
     for text_num in range(starting_text, ending_text):
-        category = ["news", "encyclopedia", "article", "novel"]
         for cat in category:
             text_num_str = "{}".format(text_num).zfill(5)
             if exclusive:

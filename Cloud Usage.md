@@ -18,29 +18,14 @@ Data/
 ├── my_train.txt
 └── my_valid.txt
 
-3. In Artifact Registry, create repository in the same region as the storage bucket. In cloudbuild.yaml, change the commented lines to the path of repository created + image name.
-```bash
-steps:
-- name: 'gcr.io/cloud-builders/docker'
-  args: [
-    'build',
-#   '-t', 'europe-west2-docker.pkg.dev/crested-return-452614-t4/test/test:latest',
-    '.'
-  ]
-  id: 'Test Image'
-
-options:
- logging: CLOUD_LOGGING_ONLY
-
-images:
-# - 'europe-west2-docker.pkg.dev/crested-return-452614-t4/test/test:latest'
-```
+3. In Artifact Registry, create repository in the same region as the storage bucket. 
 
 4. In Cloud Build, create a trigger in the same region as the Artifact Registry. 
     - Choose a suitable event (e.g. Push to a branch)
     - Select 2nd gen repository generation
     - Link the GitHub repository
-    - Select Cloud Build configuration file (for Configurations), Repository (for Location)
+    - Select Dockerfile (for Configurations) and Repository (for Location)
+    - Dockerfile name: ```Dockerfile```, image name: ```us-central1-docker.pkg.dev/project-name/registry-name/image:latest```
     - Enable "Require approval before build executes"
     - For manual image build, press Enable/ Run in the created trigger
 
@@ -48,12 +33,16 @@ images:
     - Training method: default (Custom training) and continue
     - Model details: fill in name and continue
     - Training container: select custom container and browse for latest built image, link to storage bucket and under arguments, modify and paste the following
-    ```bash
+    ```
     --path=gs://bucket_name/Data/
-    --language=Thai 
-    --input-type=unsegmented
-    --epochs=5
-    --name=test
+    --language=Thai
+    --input-type=BEST
+    --model-type=cnn
+    --epochs=200
+    --filters=32
+    --name=Thai_codepoints_32
+    --edim=40
+    --embedding=codepoints
     ```
     - Hyperparameters: unselect and continue
     - Compute and pricing: choose existing resources or deploy to new worker pool
