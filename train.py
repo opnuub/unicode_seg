@@ -14,6 +14,7 @@ def parser_args():
     parser.add_argument('--name', help='Model name, follow Model Specifications convention', type=str, default="test")
     parser.add_argument('--embedding', help='Embedding type such as grapheme_clusters_tf or codepoints', type=str, default="codepoints")
     parser.add_argument('--edim', help='Input embedding dimensions', type=int, default=16)
+    parser.add_argument('--hunits', help='Number of neurons after convolution layers', type=int, default=23)
     parser.add_argument('--learning-rate', help='Learning rate', type=float, default=0.001)
     args = parser.parse_args()
     arguments = args.__dict__
