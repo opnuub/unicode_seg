@@ -1,6 +1,6 @@
 ## AdaBoost for Cantonese
 
-Relative to BudouX’s n-gram model, the new radical-based AdaBoost model reaches comparable accuracy with under half the model size. Moreover, despite being trained on only zh-hant data, the radical-based model generalised better, which makes it more suitable to deploy in zh-hant variants such as zh-tw and zh-hk (Cantonese).
+Relative to BudouX’s n-gram model, the new [radical](https://en.wikipedia.org/wiki/Chinese_character_radicals)-based AdaBoost model reaches comparable accuracy with under half the model size. The radical of a Chinese character is typically the character's semantic component. Morever, there are only 214 of them in (kRSUnicode)[https://en.wikipedia.org/wiki/Kangxi_radicals], making it suitable for lightweight models. The other benefit of using radicals is that, even though the model is trained on only zh-hant data, the radical-based model generalised better, which makes it more suitable to deploy in zh-hant variants such as zh-tw and zh-hk (Cantonese).
 
 **CITYU Test Dataset (zh-hant)**
 | Model | F1-Score | Model Size |

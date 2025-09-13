@@ -34,13 +34,12 @@ class WordSegmenterCNN:
         input_embedding_type: determines what type of embedding to be used in the model. Possible values are
         "grapheme_clusters_tf", "grapheme_clusters_man", and "generalized_vectors"
     """
-    def __init__(self, input_name, input_clusters_num, input_embedding_dim, input_hunits,
+    def __init__(self, input_name, input_clusters_num, input_embedding_dim,
                  input_dropout_rate, input_output_dim, input_epochs, input_training_data, input_evaluation_data,
-                 input_language, input_embedding_type, filters, layers, learning_rate):
+                 input_language, input_embedding_type, filters, learning_rate):
         self.name = input_name
         self.clusters_num = input_clusters_num
         self.embedding_dim = input_embedding_dim
-        self.hunits = input_hunits
         self.dropout_rate = input_dropout_rate
         self.output_dim = input_output_dim
         self.epochs = input_epochs
@@ -50,7 +49,6 @@ class WordSegmenterCNN:
         self.embedding_type = input_embedding_type
         self.model = None
         self.filters = filters
-        self.layers = layers
         self.learning_rate = learning_rate
 
         # Constructing the grapheme cluster dictionary -- this will be used if self.embedding_type is Grapheme Clusters
@@ -78,8 +76,8 @@ class WordSegmenterCNN:
                 break
             cnt += 1
 
-        # Loading the code points dictionary -- this will be used if self.embedding_type is Code Points
-        # If you want to group some of the code points into buckets, that code should go here to change
+        # Loading the codepoints dictionary -- this will be used if self.embedding_type is codepoints
+        # If you want to group some of the codepoints into buckets, that code should go here to change
         # self.codepoint_dic appropriately
         if self.language == "Thai":
             self.codepoint_dic = constants.THAI_CODE_POINT_DICTIONARY
@@ -101,7 +99,7 @@ class WordSegmenterCNN:
                 smallest_unicode_dec = int("1000", 16)
                 largest_unicode_dec = int("109F", 16)
 
-            # Defining the code point buckets that will get their own individual embedding vector
+            # Defining the codepoint buckets that will get their own individual embedding vector
             # 1: Letters, 2: Marks, 3: Digits, 4: Separators, 5: Punctuations, 6: Symbols, 7: Others
             separate_slot_buckets = []
             separate_codepoints = []
@@ -298,7 +296,7 @@ class WordSegmenterCNN:
         # won't need unnecessary if/else for "man_segmented" and "icu_segmented" throughout rest of this function.
         line = Line(input_line, "icu_segmented")
 
-        # x_data and y_data will be code point based if self.embedding_type is codepoints
+        # x_data and y_data will be codepoint based if self.embedding_type is codepoints
         if self.embedding_type == "codepoints":
             true_bies = line.get_bies_codepoints("icu")
             y_data = true_bies.mat

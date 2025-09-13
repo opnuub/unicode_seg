@@ -63,15 +63,17 @@ In Vertex AI Custom Training, you need to specify the following hyperparameters:
 
 * **name:** This is the model name.
 * **path:** This is the Google Cloud Storage Bucket link.
-* **language:** This is the language that you'll like to train, such as Thai or Burmese.
-* **input-type:** This is the dataset type, such as BEST or my.
-* **model-type:** This is the model architecture type, such as lstm or cnn.
-* **epochs:** This is the number of epochs used to train the model, it is recommended to use 200.
-* **filters:** This the the number of filters in each Conv1D layer and plays a significant role in data size, accuracy and inference speed.
-* **edim:** This is embedding_dim, the length of each embedding vector and plays a significant role in data size, accuracy and inference speed.
+* **language:** This is the language that you'll like to train, such as ```Thai``` or ```Burmese```.
+* **input-type:** This is the dataset type, such as ```BEST``` for Thai and ```my``` for Burmese. Refer to [Cloud Usage](Cloud%20Usage.md) for more details.
+* **model-type:** This is the model architecture type, such as ```lstm``` or ```cnn```.
+* **epochs:** This is the number of epochs used to train the model, it is recommended to use a number of >= 200 as the model only trains on 10% of the dataset in each epoch. The model will output the epoch that gives the best validation loss.
+* **filters:** This is the number of filters in each Conv1D layer and plays a significant role in data size, accuracy, and inference speed.
+* **edim:** This is embedding_dim, the length of each embedding vector and plays a significant role in data size, accuracy, and inference speed.
 * **embedding:**: This determines what type of embedding is used to train the model, and can be one of the followings:
-  * `"grapheme_clusters_tf"`: This option should be used when one uses grapheme clusters as the embedding system.
+  * `"grapheme_clusters_tf"`: This option should be used when one uses grapheme clusters as the embedding unit.
   * `"codepoints"`: this option should be used when the embedding is based on code points.
+* **learning-rate:** This determines the model's learning rate. The default is 0.001.
+
 
 ### Model Performance Comparison
 **Codepoints**
