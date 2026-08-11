@@ -201,7 +201,8 @@ class WordSegmenterCNN:
             acc = np.zeros((Cout,), dtype=x.dtype)
             for k in range(K):
                 idx = i + k * dilation
-                acc += np.matmul(x_pad[idx], kernel[k])
+                if 0 <= idx < L + 2 * pad:
+                    acc += np.matmul(x_pad[idx], kernel[k])
             y[i] = acc + bias
         return y
     
