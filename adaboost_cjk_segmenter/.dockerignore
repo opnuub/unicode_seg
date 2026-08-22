@@ -1,0 +1,7 @@
+.venv/
+artifacts/
+tests/
+__pycache__/
+*.pyc
+README.md
+model.json
